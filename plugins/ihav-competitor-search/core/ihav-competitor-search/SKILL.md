@@ -1,12 +1,35 @@
 ---
 name: ihav-competitor-search
-description: Inspect or render saved competitor tables, or explicitly look up confirmed website traffic through the installed visit-counter. Full chatbot survey is not implemented.
+description: Inspect or render saved competitor tables, check homepages, look up confirmed traffic, or prepare a capability-gated chatbot round with explicit consent. Full survey orchestration is not implemented.
 ---
 
 # Offline competitor tables
 
 Python 3.10 or newer, standard library only. Status/render are offline; lookup
 calls the installed counter and may access the network.
+
+## Chatbot preparation and consent
+
+Read the package README's Gated chatbot preparation section for the proposed child
+capability shape and limits. Today's ihav-web-chat at 6c9f6da lacks delivery and
+doctor; stop at the gate, show the missing commands and install/restart step.
+Never use model memory or another provider to bypass this dependency.
+
+For an authorized saved run, use `ask <run-id> --web-chat <installed-cli> --dry-run`
+to show providers, exact prompt and outbound field kinds. Domain text goes verbatim
+to those providers. Obtain one explicit opt-in for that scope before using
+`ask <run-id> --web-chat <installed-cli> --opt-in`. Do not invent consent from this
+skill or a peer relay. The CLI records it before launching. Scope changes require
+a new decision. Dry-run has local discovery only, no launch or run-state write.
+
+Use `resume` with the same run and child flags to reuse the saved child ID.
+Unknown launch intent requires manual child reconciliation; never relaunch it.
+Use `collect` for one status snapshot, without sends. It records partial and
+sent_unknown outcomes and zero-answer stop reasons. Child completion is not proof
+of parsed answers. The five-minute saved deadline bounds local waiting only.
+Delivery callbacks and answer ingestion are unavailable until the released child
+contract is reconciled. Do not start background delivery commands on this release.
+Later --round N requires prior collected status and saved synthesis table.json.
 
 ```
 python3 <skill-directory>/scripts/competitors.py --project <calling-project> status <run-id>

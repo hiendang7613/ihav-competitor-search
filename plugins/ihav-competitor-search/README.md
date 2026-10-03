@@ -5,6 +5,58 @@ exports a table with per-cell evidence. An explicit `lookup` command calls the
 installed visit-counter dependency. It does not run a full competitor survey.
 The package uses Python 3.10+ and the standard library only.
 
+## Gated chatbot preparation
+
+The installed ihav-web-chat at commit `6c9f6da` exposes run, status and providers,
+but lacks delivery and versioned capabilities. This milestone therefore refuses
+live launches against that child. No real child or provider call was made in tests.
+It prepares saved runs; it does not create or complete a full survey automatically.
+
+For a saved run containing domain text in request.json:
+
+```
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> ask <run-id> --web-chat <installed-cli> --dry-run
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> ask <run-id> --web-chat <installed-cli> --opt-in
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> resume <run-id> --web-chat <installed-cli>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> collect <run-id> --web-chat <installed-cli>
+```
+
+Use `IHAV_WEB_CHAT` instead of --web-chat if needed. The gate reads --help, then
+requires doctor --json with a version string, a commands list containing run,
+status, delivery wait and delivery read, and a nonempty providers list. This JSON
+shape is a proposed consumer contract, tested only with a fake child. It must be
+reconciled with the released child before live use. Missing commands produce the
+exact missing names and an install/restart instruction; installing today's release
+does not supply unreleased commands. No automatic installation or memory fallback.
+
+The preview prints selected providers, exact prompt and outbound field kinds.
+Domain text is sent verbatim. --dry-run performs local capability discovery but
+writes no run state and launches nothing. --opt-in records one consent in
+request.json before any child run command. Consent covers the selected providers,
+domain and candidate name/homepage/accepted-column values across configured rounds.
+Changes to that scope stop and require a new explicit decision.
+
+Each round saves prompt.md and launch.json before dispatch. The request key binds
+run ID, round and prompt hash. A missing child ID after launch intent becomes
+unknown on resume and requires manual reconciliation; it never causes a second
+launch. A saved child ID is reused. The ask.lock excludes another ask-stage writer;
+use one writer per run across all commands and reconcile crash locks manually.
+
+collect reads one status snapshot, preserves every selected provider outcome in
+children.json and never sends. Terminal states are completed, failed, timeout,
+login_required, human_verification_required, not_sent, sent_unknown and cancelled.
+Rounds can be waiting, completed, partial or partial_unresolved. A five-minute
+saved deadline ends local waiting without rewriting child statuses or cancelling
+the child. Zero completed providers stop round 1; later zero-answer rounds record
+verification as the next stage. Completed counts remain child status claims,
+not evidence that usable answers were delivered or merged.
+
+Later rounds use --round N and require the prior collected round plus saved
+table.json. Outbound synthesis contains only names, homepages and accepted column
+values; raw observations, request notes and evidence are excluded. Status outcomes
+appear in rendered JSON and HTML. Delivery waiting/reading, answer ingestion and
+automatic orchestration remain deferred until their released schema is known.
+
 From the repository root:
 
 ```

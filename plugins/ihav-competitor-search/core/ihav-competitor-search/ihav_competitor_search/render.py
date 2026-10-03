@@ -96,7 +96,7 @@ def export(table, directory):
                 value = f'<a href="{html.escape(evidence_cell["source_url"], quote=True)}" title="{title}">{value}</a>'
             cells.append(f"<td>{value}</td>")
         body.append("<tr>" + "".join(cells) + "</tr>")
-    summary = html.escape(json.dumps(table["rounds"], ensure_ascii=False, indent=2))
+    summary = html.escape(json.dumps({"merge": table["rounds"], "chatbot": table.get("chatbot_rounds", {})}, ensure_ascii=False, indent=2))
     issues = html.escape(json.dumps(table["issues"], ensure_ascii=False, indent=2))
     report = ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
               '<title>Competitor survey</title><style>body{font:15px system-ui;margin:2rem;color:#172033;background:#f5f7fb}'

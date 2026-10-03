@@ -3,6 +3,7 @@ import argparse
 import json
 import re
 import sys
+import subprocess
 from pathlib import Path
 
 from .merge import empty_table, merge_round, normalize_url
@@ -10,6 +11,7 @@ from .rank import apply_visits
 from .render import atomic_write, export
 from .visits import CounterVisitStage, lookup_hosts, source_blocked
 from .homepages import HTTPHomepageStage, check_homepages, confirm_homepage, apply_homepage_decisions
+from .chatbots import WebChatChild, prepare, ask, collect
 
 
 def load(path):
@@ -48,6 +50,8 @@ def synthesize(directory):
     table = apply_homepage_decisions(table, request, directory)
     visits = load(directory / "visits.json") if (directory / "visits.json").exists() else {}
     table = apply_visits(table, visits)
+    table["chatbot_rounds"] = {folder.name: load(folder / "children.json") for folder in rounds
+                               if (folder / "children.json").exists()}
     table["request"] = request
     table["stages"] = {"ask": "recorded_input", "merge": "completed", "rank": "recorded_input",
                        "homepage_check": "recorded_input", "verification": "not_implemented"}
@@ -73,10 +77,29 @@ def main(argv=None):
     choice.add_argument("--url")
     choice.add_argument("--unconfirmed", help="reason official homepage remains unconfirmed")
     confirm.add_argument("--method", choices=["page", "official_search"], default="page")
+    for command in ("ask", "resume", "collect"):
+        chatbot = sub.add_parser(command, help="gated chatbot stage; current child lacks required delivery capabilities")
+        chatbot.add_argument("run_id")
+        chatbot.add_argument("--web-chat", type=Path, help="installed child CLI; or IHAV_WEB_CHAT")
+        chatbot.add_argument("--round", type=int, default=1)
+        if command != "collect":
+            chatbot.add_argument("--dry-run", action="store_true")
+            chatbot.add_argument("--opt-in", action="store_true", help="explicit consent after reviewing the preview")
     args = parser.parse_args(argv)
     try:
         directory = run_path(args.project, args.run_id)
-        if args.command == "status":
+        if args.command in {"ask", "resume", "collect"}:
+            child = WebChatChild(args.web_chat, args.project)
+            if args.command == "collect":
+                result = collect(directory, child, args.round)
+            else:
+                _, _, outbound = prepare(directory, child, args.round)
+                print(json.dumps({"preview": outbound, "dry_run": args.dry_run}), flush=True)
+                if args.dry_run:
+                    return 0
+                result = ask(directory, child, args.round, opt_in=args.opt_in)
+            print(json.dumps(result))
+        elif args.command == "status":
             request = load(directory / "request.json")
             visits = load(directory / "visits.json") if (directory / "visits.json").exists() else {}
             print(json.dumps({"run_id": args.run_id, "request": request,
@@ -84,7 +107,7 @@ def main(argv=None):
                               "lookup": {"recorded_hosts": len(visits),
                                          "blocked": any(source_blocked(v) for v in visits.values()),
                                          "unknown": any(v.get("state") in {"launching", "unknown"} for v in visits.values())},
-                              "stages": {"chatbot": "not_implemented", "homepage": "host_confirmation", "verification": "not_implemented"}}))
+                              "stages": {"chatbot": "capability_gated", "homepage": "host_confirmation", "verification": "not_implemented"}}))
         elif args.command == "check":
             table, _ = synthesize(directory)
             checks = check_homepages(table, directory, HTTPHomepageStage())
@@ -135,7 +158,7 @@ def main(argv=None):
             print(json.dumps({"run_id": args.run_id, "rows": len(table["rows"]), "outputs": outputs,
                               "verification": "not_implemented"}))
         return 0
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 
