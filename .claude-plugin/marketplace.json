@@ -1,0 +1,5 @@
+{
+  "name": "ihav-competitor-search",
+  "owner": {"name": "hiendang7613"},
+  "plugins": [{"name": "ihav-competitor-search", "source": "./plugins/ihav-competitor-search", "description": "Offline competitor synthesis with traffic ranking and cell evidence", "category": "productivity"}]
+}

@@ -1,0 +1,1 @@
+{"name":"ihav-competitor-search","version":"0.1.0","description":"Offline competitor synthesis. Live survey is not implemented.","author":{"name":"hiendang7613"},"license":"MIT","skills":"./core/","interface":{"displayName":"ihav-competitor-search","shortDescription":"Offline tables with traffic and evidence","category":"Productivity"}}

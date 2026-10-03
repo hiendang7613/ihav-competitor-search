@@ -1,0 +1,1 @@
+{"name":"ihav-competitor-search","interface":{"displayName":"ihav-competitor-search"},"plugins":[{"name":"ihav-competitor-search","source":{"source":"local","path":"./plugins/ihav-competitor-search"},"policy":{"installation":"AVAILABLE"},"category":"Productivity"}]}

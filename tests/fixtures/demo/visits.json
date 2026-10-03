@@ -1,0 +1,8 @@
+{
+  "alpha.example":{"exit_code":0,"result":{"domain":"alpha.example","kind":"estimate","monthly_visits":100,"analyzed_at":"2026-09-01","source":{"name":"Synthetic fixture","url":"https://traffic.example/alpha"},"notes":["Synthetic; not measured traffic"]}},
+  "vendor.example":{"exit_code":0,"result":{"domain":"vendor.example","kind":"estimate","monthly_visits":10000,"analyzed_at":"2026-09-01","source":{"name":"Synthetic fixture","url":"https://traffic.example/vendor"}}},
+  "ranked.example":{"exit_code":0,"result":{"domain":"ranked.example","kind":"rank_only","monthly_visits":null,"rank":{"value":123,"list":"Tranco synthetic","date":"2026-10-03"},"source":{"name":"Synthetic fixture","url":"https://rank.example"}}},
+  "missing.example":{"exit_code":2,"reason":"no data"},
+  "blocked.example":{"exit_code":4,"reason":"blocked"},
+  "unqueried.example":{"exit_code":null,"reason":"stopped after block"}
+}

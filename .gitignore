@@ -1,0 +1,8 @@
+.ihav_space/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.benchmarks/
+pytest-of-*/
