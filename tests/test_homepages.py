@@ -1,5 +1,7 @@
 import json
+import gzip
 import socket
+import zlib
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request
@@ -13,6 +15,16 @@ from ihav_competitor_search.homepages import (HTTPHomepageStage, SameSiteRedirec
 from ihav_competitor_search.merge import empty_table, merge_round
 from ihav_competitor_search.rank import apply_visits
 from ihav_competitor_search import homepages
+
+@pytest.mark.parametrize("body,expected", [
+    ("<html><head><title>GitHub &amp; Company</title></head><body><svg><title>Customer A</title></svg><svg><title>Customer B</title></svg></body></html>", "GitHub & Company"),
+    ("<svg><title>Logo</title></svg><title>Fallback</title><head><title>Document</title><title>Second</title></head>", "Document"),
+    ("<svg><title>Logo only</title></svg>", None),
+    ("<title>First document</title><title>Second document</title>", "First document"),
+    ("<head><title> </title><title>Second</title></head><title>Fallback</title>", None),
+])
+def test_document_title_excludes_svg_and_prefers_head(body, expected):
+    assert homepages.page_title(body) == expected
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
@@ -166,3 +178,72 @@ def test_fetcher_uses_bounded_plain_get(monkeypatch):
     assert "ihav-competitor-search" in request.get_header("User-agent")
     assert request.get_header("Cookie") is None
     assert page["http_status"]==200 and page["body"]=="<title>Product</title>"
+
+
+@pytest.mark.parametrize("content_encoding", ["gzip", "deflate", "raw-deflate"])
+def test_fetcher_decodes_python_title_response_offline(monkeypatch, content_encoding):
+    # Minimal reproduction of the saved python.org response: HTTP 200, UTF-8
+    # HTML, Content-Encoding gzip despite no encoding negotiation by the caller.
+    html = b"<html><head><title>Welcome to Python.org</title></head><body><svg><title>Logo</title></svg></body></html>"
+    if content_encoding == "gzip":
+        wire = gzip.compress(html, mtime=0)
+    elif content_encoding == "deflate":
+        wire = zlib.compress(html)
+    else:
+        compressor = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+        wire = compressor.compress(html) + compressor.flush()
+    headers = Message()
+    headers["Content-Type"] = "text/html; charset=utf-8"
+    headers["Content-Encoding"] = "deflate" if content_encoding == "raw-deflate" else content_encoding
+    class Response:
+        code = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def geturl(self): return "https://www.python.org/"
+        def read(self, count):
+            assert count == homepages.MAX_BYTES + 1
+            return wire
+    response = Response()
+    response.headers = headers
+    class Opener:
+        def open(self, request, timeout): return response
+    monkeypatch.setattr(homepages, "build_opener", lambda handler: Opener())
+    stage = HTTPHomepageStage(homepages.fetch_page)
+    record = stage.check(table("https://www.python.org/")["rows"][0])
+    assert record["title"] == "Welcome to Python.org"
+    assert record["eligible_for_confirmation"] and not record["truncated"]
+    assert record["content_encoding"] == headers["Content-Encoding"]
+
+
+@pytest.mark.parametrize("content_encoding", ["gzip", "deflate"])
+def test_compression_expansion_is_bounded(content_encoding):
+    expanded = b"x" * (homepages.MAX_BYTES + 100)
+    wire = gzip.compress(expanded) if content_encoding == "gzip" else zlib.compress(expanded)
+    body, reason, truncated = homepages.decode_content(wire, content_encoding)
+    assert body == b"" and reason == "decoded_body_limit" and truncated
+
+
+def test_unknown_and_corrupt_encoding_do_not_look_like_missing_titles():
+    assert homepages.decode_content(b"binary", "br") == (b"", "unsupported_content_encoding", False)
+    assert homepages.decode_content(b"broken", "gzip") == (b"", "invalid_content_encoding", False)
+    assert homepages.decode_content(zlib.compress(b"text")[:-2], "deflate") == (b"", "invalid_content_encoding", False)
+    assert homepages.decode_content(b"x" * (homepages.MAX_BYTES + 1), "identity") == (b"", "wire_body_limit", True)
+
+
+def test_unsupported_encoding_is_saved_as_unconfirmed_reason(monkeypatch):
+    headers = Message()
+    headers["Content-Encoding"] = "br"
+    class Response:
+        code = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def geturl(self): return "https://example.com/"
+        def read(self, count): return b"unsupported binary bytes"
+    response = Response()
+    response.headers = headers
+    class Opener:
+        def open(self, request, timeout): return response
+    monkeypatch.setattr(homepages, "build_opener", lambda handler: Opener())
+    record = HTTPHomepageStage(homepages.fetch_page).check(table("https://example.com/")["rows"][0])
+    assert record["reason"] == "unsupported_content_encoding"
+    assert record["content_encoding"] == "br" and not record["eligible_for_confirmation"]

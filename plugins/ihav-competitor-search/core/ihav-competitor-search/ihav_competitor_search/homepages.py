@@ -1,7 +1,10 @@
 """One bounded homepage check, followed by explicit host-agent confirmation."""
 import copy
+import gzip
+import io
 import json
 import re
+import zlib
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -22,26 +25,79 @@ def now():
 class TitleParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.in_title = False
-        self.parts = []
+        self.in_head = False
+        self.svg_depth = 0
+        self.current = None
+        self.current_in_head = False
+        self.head_title = None
+        self.fallback_title = None
+        self.head_seen = False
+        self.fallback_seen = False
 
     def handle_starttag(self, tag, attrs):
-        if tag.lower() == "title":
-            self.in_title = True
+        tag = tag.lower()
+        if tag == "head":
+            self.in_head = True
+        elif tag == "svg":
+            self.svg_depth += 1
+        elif tag == "title" and not self.svg_depth and self.current is None:
+            self.current = []
+            self.current_in_head = self.in_head
 
     def handle_endtag(self, tag):
-        if tag.lower() == "title":
-            self.in_title = False
+        tag = tag.lower()
+        if tag == "title" and self.current is not None and not self.svg_depth:
+            title = " ".join("".join(self.current).split())[:1000] or None
+            if self.current_in_head and not self.head_seen:
+                self.head_title = title
+                self.head_seen = True
+            elif not self.current_in_head and not self.fallback_seen:
+                self.fallback_title = title
+                self.fallback_seen = True
+            self.current = None
+        elif tag == "head":
+            self.in_head = False
+        elif tag == "svg":
+            self.svg_depth = max(0, self.svg_depth - 1)
 
     def handle_data(self, data):
-        if self.in_title:
-            self.parts.append(data)
+        if self.current is not None and not self.svg_depth:
+            self.current.append(data)
 
 
 def page_title(body):
     parser = TitleParser()
     parser.feed(body)
-    return " ".join("".join(parser.parts).split())[:1000] or None
+    return parser.head_title if parser.head_seen else parser.fallback_title
+
+
+def decode_content(data, content_encoding):
+    """Bound both wire bytes and expanded bytes; never decode unknown formats as HTML."""
+    if len(data) > MAX_BYTES:
+        return b"", "wire_body_limit", True
+    if content_encoding in {"", "identity"}:
+        return data, None, False
+    if content_encoding not in {"gzip", "deflate"}:
+        return b"", "unsupported_content_encoding", False
+    try:
+        if content_encoding == "gzip":
+            with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:
+                expanded = stream.read(MAX_BYTES + 1)
+        else:
+            try:
+                decoder = zlib.decompressobj()
+                expanded = decoder.decompress(data, MAX_BYTES + 1)
+            except zlib.error:
+                # Some HTTP servers use raw DEFLATE rather than the zlib wrapper.
+                decoder = zlib.decompressobj(-zlib.MAX_WBITS)
+                expanded = decoder.decompress(data, MAX_BYTES + 1)
+            if len(expanded) <= MAX_BYTES and (not decoder.eof or decoder.unused_data):
+                return b"", "invalid_content_encoding", False
+        if len(expanded) > MAX_BYTES:
+            return b"", "decoded_body_limit", True
+        return expanded, None, False
+    except (OSError, EOFError, zlib.error):
+        return b"", "invalid_content_encoding", False
 
 
 class RedirectBoundary(Exception):
@@ -92,13 +148,16 @@ def fetch_page(url):
         response = exc
     with response:
         data = response.read(MAX_BYTES + 1)
+        content_encoding = response.headers.get("Content-Encoding", "").strip().lower()
+        data, reason, truncated = decode_content(data, content_encoding)
         encoding = response.headers.get_content_charset() or "utf-8"
         try:
-            body = data[:MAX_BYTES].decode(encoding, errors="replace")
+            body = data.decode(encoding, errors="replace")
         except LookupError:
-            body = data[:MAX_BYTES].decode("utf-8", errors="replace")
+            body = data.decode("utf-8", errors="replace")
         return {"final_url": response.geturl(), "http_status": response.code, "body": body,
-                "truncated": len(data) > MAX_BYTES, "redirects": redirects.redirects,
+                "content_encoding": content_encoding or "identity", "reason": reason,
+                "truncated": truncated, "redirects": redirects.redirects,
                 "challenge_header": response.headers.get("cf-mitigated", "").lower() == "challenge"}
 
 

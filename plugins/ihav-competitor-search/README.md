@@ -171,6 +171,11 @@ cross-site redirects and HTTPS downgrades are recorded without fetching their
 targets. No retries, cookies, browser, login or bot-wall bypass are used.
 
 `homepage_checks.json` retains final URL, status, title, date and failure reason.
+Title extraction prefers the first document title in head and ignores SVG titles.
+Responses marked gzip or deflate are decoded with the standard library before
+HTML parsing. Both wire bytes and decoded bytes are capped at 1 MiB. Unsupported
+content encodings, corrupt compressed bodies and size-limit failures remain
+unconfirmed with an explicit reason; the checker never retries them.
 HTTP 401/403/429 or recognized challenge markers stop that host's remaining
 candidates. Other hosts can continue. A saved check is not repeated, including
 timeout and interrupted intent. A crash can leave `homepage.lock`; reconcile the
