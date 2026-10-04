@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 500" role="img" aria-labelledby="title desc">
+  <title id="title">ihav-competitor-search — compare with context</title>
+  <desc id="desc">Manual prompts and pasted answers become a competitor table with dates and evidence. The preview uses invented product names and numbers on example.com subdomains; no live data. Automated chatbot delivery is not available yet.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#111b32"/><stop offset="1" stop-color="#103b45"/></linearGradient>
+    <clipPath id="canvas"><rect width="1280" height="500" rx="28"/></clipPath>
+  </defs>
+  <rect width="1280" height="500" rx="28" fill="url(#background)"/>
+  <g clip-path="url(#canvas)"><circle cx="1190" cy="70" r="230" fill="#2dd4bf" opacity=".07"/><circle cx="520" cy="580" r="240" fill="#38bdf8" opacity=".07"/></g>
+  <g font-family="Inter, system-ui, -apple-system, Segoe UI, sans-serif">
+    <rect x="64" y="53" width="45" height="45" rx="12" fill="#2dd4bf"/>
+    <path d="M76 81h5v-9h-5zm9 0h5V65h-5zm9 0h5V61h-5z" fill="#102333"/>
+    <text x="124" y="71" fill="#99f6e4" font-size="12" font-weight="700" letter-spacing="2">IHAV · COMPETITOR RESEARCH</text>
+    <text x="124" y="94" fill="#f0fdfa" font-size="20" font-weight="700">ihav-competitor-search</text>
+    <text x="64" y="180" fill="#ffffff" font-size="47" font-weight="750">Map the options.</text>
+    <text x="64" y="236" fill="#ffffff" font-size="47" font-weight="750">Keep the evidence.</text>
+    <text x="66" y="285" fill="#cbd5e1" font-size="19">Copy prompts. Paste answers.</text>
+    <text x="66" y="316" fill="#cbd5e1" font-size="19">Confirm homepages. Compare traffic.</text>
+    <rect x="64" y="348" width="239" height="32" rx="16" fill="#164e4c"/>
+    <text x="80" y="369" fill="#99f6e4" font-size="12" font-weight="700">MANUAL WORKFLOW AVAILABLE</text>
+    <text x="66" y="416" fill="#94a3b8" font-size="14">Claude Code + Codex · Python 3.10+</text>
+    <text x="66" y="443" fill="#fcd34d" font-size="13">Automated chatbot delivery: not available yet</text>
+    <g transform="translate(613 63)">
+      <rect width="602" height="375" rx="18" fill="#f8fafc"/>
+      <rect x="24" y="22" width="264" height="25" rx="12" fill="#fff1cc"/>
+      <text x="38" y="39" fill="#854d0e" font-size="11" font-weight="750">SYNTHETIC PREVIEW · NO LIVE DATA</text>
+      <text x="27" y="86" fill="#0f172a" font-size="23" font-weight="750">Three options. Dates included.</text>
+      <text x="27" y="111" fill="#64748b" font-size="12">Invented names and counts · selected report columns</text>
+      <path d="M26 134h550M26 166h550M26 219h550M26 272h550M26 325h550" stroke="#e2e8f0"/>
+      <g fill="#64748b" font-size="11" font-weight="700"><text x="28" y="154">CANDIDATE</text><text x="220" y="154">ESTIMATED VISITS</text><text x="420" y="154">INPUT METHOD</text></g>
+      <g font-size="15" font-weight="650" fill="#0f172a"><text x="28" y="190">Atlas Paper</text><text x="220" y="190">64,000</text><text x="28" y="243">Lumen Pages</text><text x="220" y="243">21,000</text><text x="28" y="296">Moss Notes</text><text x="220" y="296">No data</text></g>
+      <g fill="#64748b" font-size="10"><text x="28" y="208">atlas.example.com</text><text x="220" y="208">analyzed 2026-09-11</text><text x="28" y="261">lumen.example.com</text><text x="220" y="261">analyzed 2026-10-03</text><text x="28" y="314">moss.example.com</text><text x="220" y="314">not zero visits</text></g>
+      <g fill="#0f766e" font-size="12"><text x="420" y="193">manual_paste</text><text x="420" y="246">manual_paste</text><text x="420" y="299">manual_paste</text></g>
+      <text x="28" y="350" fill="#854d0e" font-size="12">Dates span 22 days. Estimates describe different dates.</text>
+    </g>
+  </g>
+</svg>

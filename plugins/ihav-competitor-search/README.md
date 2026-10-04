@@ -1,5 +1,9 @@
 # ihav-competitor-search — core and counter adapter
 
+See the [repository overview](../../README.md) for installation prerequisites,
+the synthetic demo, accuracy, terms and privacy. This page is the detailed
+command and saved-input reference.
+
 This milestone merges recorded chatbot answers, ranks recorded site traffic and
 exports a table with per-cell evidence. An explicit `lookup` command calls the
 installed visit-counter dependency. It does not run a full competitor survey.
@@ -163,11 +167,12 @@ behind interfaces. Status and render never call the counter or fetch pages. Miss
 stays unqueried. The HTML is a static skeleton; interactive
 sort controls, charts and badges are deferred.
 
-The design uses only ihav-web-visit-counter for traffic. Its current source's terms
-include a restriction on substantially similar or competing services, with no
-numeric usage limit. Admin approved proceeding with a stated risk and stop on
-block. That decision does not settle source permission. Future live integration
-respects the counter's cache and stops after exit 4.
+Traffic comes only through ihav-web-visit-counter. Its primary provider,
+WebTrafficChecker, has a restriction on substantially similar or competing
+services and no documented numeric usage limit. That clause may apply to this
+plugin. Caching and stopping on blocks do not settle source permission. Read the
+[public source-term summary](../../README.md#data-sources-and-terms) before use.
+The adapter uses the counter's cache and stops on a fresh primary-provider block.
 
 ## Explicit counter lookup
 
@@ -178,7 +183,7 @@ python3 plugins/ihav-competitor-search/core/ihav-competitor-search/scripts/compe
 The path can instead come from `IHAV_VISIT_COUNTER`. A missing counter stops with
 install/restart instructions; this plugin does not install it. The command may
 access the network through the child; run it only when that task is authorized.
-No real counter call has been made for this adapter's checks.
+The adapter tests use a fake counter; their results do not qualify live providers.
 
 The child runs with the calling project as cwd and an explicit cache directory
 at `.ihav_space/ihav-web-visit-counter/`. The adapter passes arguments directly,
@@ -215,8 +220,8 @@ python3 <skill-directory>/scripts/competitors.py --project <calling-project> con
 python3 <skill-directory>/scripts/competitors.py --project <calling-project> confirm <run-id> <candidate_id> --unconfirmed <reason>
 ```
 
-`check` may access the network and needs task authorization. This implementation
-was checked with injected fetchers only; no live run was made. Each candidate gets
+`check` may access the network and needs task authorization. Its regression tests
+use injected fetchers and do not qualify live websites. Each candidate gets
 one initial GET with a descriptive User-Agent, ten-second timeout and a one-MiB
 body limit. At most three redirects on the same normalized host are followed;
 cross-site redirects and HTTPS downgrades are recorded without fetching their

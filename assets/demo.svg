@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 530" role="img" aria-labelledby="title desc">
+  <title id="title">Synthetic competitor table illustration</title>
+  <desc id="desc">Invented products Atlas Paper, Lumen Pages and Moss Notes on example.com subdomains. Invented monthly estimates are 64000 analyzed September 11 2026 and 21000 analyzed October 3 2026; Moss has no data, not zero. All inputs are manual_paste. This is an illustration of selected columns, not an actual screenshot or live result.</desc>
+  <rect width="1200" height="530" rx="22" fill="#f1f5f9"/>
+  <g font-family="Inter, system-ui, -apple-system, Segoe UI, sans-serif">
+    <rect x="35" y="30" width="345" height="28" rx="14" fill="#fef3c7"/>
+    <text x="51" y="49" fill="#92400e" font-size="12" font-weight="750">SYNTHETIC ILLUSTRATION · INVENTED DATA</text>
+    <text x="36" y="98" fill="#0f172a" font-size="29" font-weight="750">A shortlist with its uncertainty attached.</text>
+    <text x="37" y="126" fill="#64748b" font-size="14">Selected report columns · example domains were not queried · not a product screenshot</text>
+    <rect x="35" y="155" width="1130" height="246" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+    <path d="M35 206h1130M35 271h1130M35 336h1130M95 155v246M375 155v246M715 155v246M915 155v246" stroke="#e2e8f0"/>
+    <g font-size="12" font-weight="700" fill="#64748b"><text x="52" y="186">RANK</text><text x="115" y="186">CANDIDATE / HOMEPAGE</text><text x="395" y="186">MONTHLY VISITS + DATE</text><text x="735" y="186">LOOKUP STATUS</text><text x="935" y="186">MENTION METHOD</text></g>
+    <g fill="#0f172a" font-size="16" font-weight="650"><text x="59" y="240">1</text><text x="115" y="234">Atlas Paper</text><text x="395" y="234">64,000 estimated visits</text><text x="59" y="305">2</text><text x="115" y="299">Lumen Pages</text><text x="395" y="299">21,000 estimated visits</text><text x="58" y="370">—</text><text x="115" y="364">Moss Notes</text><text x="395" y="364">Unknown</text></g>
+    <g fill="#64748b" font-size="12"><text x="115" y="255">atlas.example.com</text><text x="395" y="255">analyzed 2026-09-11 · synthetic source</text><text x="115" y="320">lumen.example.com</text><text x="395" y="320">analyzed 2026-10-03 · synthetic source</text><text x="115" y="385">moss.example.com</text><text x="395" y="385">No usable count; never converted to zero</text></g>
+    <g fill="#0f766e" font-size="14"><text x="735" y="241">estimate</text><text x="735" y="306">estimate</text><text x="935" y="241">manual_paste</text><text x="935" y="306">manual_paste</text><text x="935" y="371">manual_paste</text></g>
+    <text x="735" y="371" fill="#64748b" font-size="14">no_data</text>
+    <rect x="35" y="421" width="1130" height="39" rx="9" fill="#fef3c7"/>
+    <text x="51" y="446" fill="#854d0e" font-size="13">Traffic estimate dates span 22 days (2026-09-11 to 2026-10-03); values describe different dates.</text>
+    <text x="37" y="493" fill="#475569" font-size="13">Modelled traffic is not owner analytics. Candidate cells remain unverified; manual_paste is user-supplied.</text>
+  </g>
+</svg>
