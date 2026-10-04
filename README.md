@@ -8,8 +8,11 @@ The manual workflow works today: print a prompt, copy it into chatbots yourself,
 paste their JSON answers, check and confirm official homepages, look up traffic
 through **ihav-web-visit-counter**, then render JSON, CSV, Markdown and HTML.
 
-**Automated chatbot asking is not ready.** It needs ihav-web-chat's delivery and
-`doctor --json` capabilities, which are not shipped yet. Full cell verification,
+**Automated chatbot asking is not ready.** It needs an ihav-web-chat release with
+`delivery read/wait` and `doctor --json`, plus a working live send. Those commands
+exist in ihav-web-chat's development branch but are not released, and no provider
+has a verified live send yet. Until then the capability gate stops with an install
+message instead of sending anything. Full cell verification,
 automatic survey orchestration and interactive charts are also not built.
 The working manual path does not call chatbots or require ihav-web-chat.
 
