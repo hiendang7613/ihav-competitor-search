@@ -80,6 +80,12 @@ does not certify that outputs match inputs edited since the last render.
 
 ## Evidence and ranking
 
+Markdown and HTML show the analysis date beside numeric visits. Display-only
+estimates show the scrape date and stale marker beside their formatted value.
+One report line appears when the available estimate dates span more than 14
+calendar days. Missing or invalid dates are not invented or included in that span.
+These view annotations do not change table.json, table.csv or evidence.csv.
+
 - Product identity uses exact normalized name plus product URL. Host alone never
   merges products. Fuzzy aliases and protocol/path changes remain separate.
 - Extra columns merge only on matching meaning, type and unit. Currency conversion
@@ -171,6 +177,14 @@ cross-site redirects and HTTPS downgrades are recorded without fetching their
 targets. No retries, cookies, browser, login or bot-wall bypass are used.
 
 `homepage_checks.json` retains final URL, status, title, date and failure reason.
+For each response received by check, raw/<candidate_id>.headers.json records the
+status, final response URL, date and filtered response headers; the paired .body
+contains at most the first 64 KiB of wire bytes, before decompression. Cookie,
+authorization, authentication, token and API-key headers are removed. A blocked
+response or refused redirect keeps its available evidence without fetching the
+redirect target. No response body is invented for transport failures. Raw bytes
+stay in the run folder and never enter the JSON table or check output. Each file
+is replaced atomically; the evidence pair is not a transactional snapshot.
 Title extraction prefers the first document title in head and ignores SVG titles.
 Responses marked gzip or deflate are decoded with the standard library before
 HTML parsing. Both wire bytes and decoded bytes are capped at 1 MiB. Unsupported

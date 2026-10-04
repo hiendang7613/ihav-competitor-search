@@ -16,6 +16,12 @@ from .merge import normalize_url
 from .render import atomic_write
 
 MAX_BYTES = 1024 * 1024
+RAW_BYTES = 64 * 1024
+
+
+def safe_headers(headers):
+    return [(name, value) for name, value in headers
+            if not any(word in name.lower() for word in ("cookie", "auth", "token", "api-key"))]
 
 
 def now():
@@ -101,8 +107,9 @@ def decode_content(data, content_encoding):
 
 
 class RedirectBoundary(Exception):
-    def __init__(self, url, status, reason):
+    def __init__(self, url, status, reason, response_url=None, headers=(), wire=b""):
         self.url, self.status, self.reason = url, status, reason
+        self.response_url, self.headers, self.wire = response_url, headers, wire
 
 
 class SameSiteRedirects(HTTPRedirectHandler):
@@ -112,21 +119,26 @@ class SameSiteRedirects(HTTPRedirectHandler):
         self.redirects = []
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        def stop(reason):
+            try:
+                wire = fp.read(RAW_BYTES)
+            except (OSError, AttributeError):
+                wire = b""
+            finally:
+                fp.close()
+            raise RedirectBoundary(target, code, reason, req.full_url,
+                                   safe_headers(headers.items()), wire)
         target = urljoin(req.full_url, newurl)
         try:
             _, host = normalize_url(target)
         except ValueError:
-            fp.close()
-            raise RedirectBoundary(target, code, "unsafe_redirect") from None
+            stop("unsafe_redirect")
         if host != self.host:
-            fp.close()
-            raise RedirectBoundary(target, code, "cross_site_redirect")
+            stop("cross_site_redirect")
         if urlsplit(req.full_url).scheme == "https" and urlsplit(target).scheme != "https":
-            fp.close()
-            raise RedirectBoundary(target, code, "unsafe_redirect")
+            stop("unsafe_redirect")
         if len(self.redirects) >= 3:
-            fp.close()
-            raise RedirectBoundary(target, code, "redirect_limit")
+            stop("redirect_limit")
         self.redirects.append({"from": req.full_url, "to": target, "status": code})
         return super().redirect_request(req, fp, code, msg, headers, target)
 
@@ -142,12 +154,14 @@ def fetch_page(url):
     try:
         response = opener.open(request, timeout=10)
     except RedirectBoundary as exc:
-        return {"final_url": url, "redirect_target": exc.url, "http_status": exc.status,
-                "body": "", "reason": exc.reason, "redirects": redirects.redirects}
+        return {"final_url": exc.response_url or url, "redirect_target": exc.url, "http_status": exc.status,
+                "body": "", "reason": exc.reason, "redirects": redirects.redirects,
+                "_raw_wire": exc.wire, "_raw_headers": exc.headers}
     except HTTPError as exc:
         response = exc
     with response:
         data = response.read(MAX_BYTES + 1)
+        wire_prefix = data[:RAW_BYTES]
         content_encoding = response.headers.get("Content-Encoding", "").strip().lower()
         data, reason, truncated = decode_content(data, content_encoding)
         encoding = response.headers.get_content_charset() or "utf-8"
@@ -158,6 +172,7 @@ def fetch_page(url):
         return {"final_url": response.geturl(), "http_status": response.code, "body": body,
                 "content_encoding": content_encoding or "identity", "reason": reason,
                 "truncated": truncated, "redirects": redirects.redirects,
+                "_raw_wire": wire_prefix, "_raw_headers": safe_headers(response.headers.items()),
                 "challenge_header": response.headers.get("cf-mitigated", "").lower() == "challenge"}
 
 
@@ -171,6 +186,9 @@ class HTTPHomepageStage:
                   "fetched_at": now(), "method": "page", "homepage_status": "unconfirmed"}
         try:
             page = self.fetcher(url)
+            if "_raw_wire" in page:
+                record["_raw_evidence"] = {"wire": page["_raw_wire"], "headers": page.get("_raw_headers", []),
+                                           "http_status": page.get("http_status"), "final_url": page.get("final_url", url)}
             body = page.get("body", "")
             status = page.get("http_status")
             final = page.get("final_url", url)
@@ -184,7 +202,7 @@ class HTTPHomepageStage:
                 reason = "blocked"
             elif reason is None and (not isinstance(status, int) or not 200 <= status < 300):
                 reason = "http_error"
-            record.update({k: v for k, v in page.items() if k != "body"})
+            record.update({k: v for k, v in page.items() if k not in {"body", "_raw_wire", "_raw_headers"}})
             record.update(title=page_title(body), final_url=final, http_status=status,
                           state="checked", reason=reason or "needs_product_confirmation",
                           eligible_for_confirmation=reason is None)
@@ -213,6 +231,24 @@ def read_checks(directory):
     return json.loads(path.read_text()) if path.exists() else {}
 
 
+def save_raw_evidence(directory, key, record):
+    evidence = record.pop("_raw_evidence", None)
+    if evidence is None:
+        return
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", key):
+        raise ValueError("invalid candidate_id for raw evidence")
+    raw = directory / "raw"
+    raw.mkdir(exist_ok=True)
+    if raw.resolve().parent != directory.resolve():
+        raise ValueError("raw evidence directory escapes the run")
+    wire = evidence["wire"][:RAW_BYTES]
+    metadata = {"http_status": evidence["http_status"], "final_url": evidence["final_url"],
+                "response_headers": safe_headers(evidence["headers"]), "fetched_at": record["fetched_at"],
+                "saved_wire_bytes": len(wire), "wire_prefix_limit": RAW_BYTES}
+    atomic_write(raw / f"{key}.body", wire)
+    atomic_write(raw / f"{key}.headers.json", json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
+
+
 def check_homepages(table, directory, stage):
     with homepage_lock(directory):
         checks = read_checks(directory)
@@ -232,6 +268,7 @@ def check_homepages(table, directory, stage):
             checks[key] = {"state": "checking", "requested_url": row["cells"]["homepage"]["value"], "fetched_at": now()}
             save()
             checks[key] = stage.check(row)
+            save_raw_evidence(directory, key, checks[key])
             save()
             if checks[key].get("reason") == "blocked":
                 blocked_hosts.add(host)

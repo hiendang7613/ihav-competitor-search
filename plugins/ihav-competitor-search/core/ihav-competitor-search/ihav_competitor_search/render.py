@@ -5,6 +5,7 @@ import io
 import json
 import os
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -51,7 +52,8 @@ def csv_text(fields, rows):
 def atomic_write(path, content):
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+        options = {} if isinstance(content, bytes) else {"encoding": "utf-8", "newline": ""}
+        with os.fdopen(fd, "wb" if isinstance(content, bytes) else "w", **options) as handle:
             handle.write(content)
         os.replace(tmp, path)
     finally:
@@ -59,11 +61,44 @@ def atomic_write(path, content):
             os.unlink(tmp)
 
 
+def visits_display(values):
+    """View annotations only; preserve the machine-readable flat row."""
+    display = dict(values)
+    if values["traffic_kind"] == "estimate":
+        display_only = not values["monthly_visits"] and bool(values["monthly_visits_text"])
+        date = values["scraped_at"] if display_only else values["analyzed_at"]
+        label = "scraped" if display_only else "analyzed"
+        suffix = f" ({label} {date or 'date unavailable'}"
+        if values["stale"] == "true":
+            suffix += "; stale"
+        suffix += ")"
+        for field in ("monthly_visits", "monthly_visits_text"):
+            if display[field]:
+                display[field] += suffix
+    return display
+
+
+def estimate_span_note(flat):
+    dates = []
+    for values in flat:
+        if values["traffic_kind"] != "estimate":
+            continue
+        value = values["scraped_at"] if not values["monthly_visits"] and values["monthly_visits_text"] else values["analyzed_at"]
+        try:
+            dates.append(datetime.fromisoformat(value.replace("Z", "+00:00")).date())
+        except ValueError:
+            continue
+    if dates and (max(dates) - min(dates)).days > 14:
+        return f"Traffic estimate dates span {(max(dates) - min(dates)).days} days ({min(dates)} to {max(dates)}); values describe different dates."
+    return ""
+
+
 def export(table, directory):
     directory = Path(directory)
     columns, rows = table["columns"], table["rows"]
     fields = META + [c["key"] for c in columns]
     flat = [flat_row(row, columns) for row in rows]
+    span_note = estimate_span_note(flat)
     evidence = [{"candidate_id": row["candidate_id"], "column_key": c["key"],
                  **{k: text(row["cells"][c["key"]].get(k)) for k in EVIDENCE[2:]}}
                 for row in rows for c in columns]
@@ -72,7 +107,7 @@ def export(table, directory):
           "| " + " | ".join(fields) + " |", "| " + " | ".join("---" for _ in fields) + " |"]
     footnotes = []
     for row, values in zip(rows, flat):
-        display = {k: escape_md(v) for k, v in values.items()}
+        display = {k: escape_md(v) for k, v in visits_display(values).items()}
         for c in columns:
             cell = row["cells"][c["key"]]
             if cell["verification"] == "verified" and safe_link(cell["source_url"]):
@@ -82,14 +117,17 @@ def export(table, directory):
                 footnotes.append(f'{n}. <a href="{url}">{escape_md(cell["source_url"])}</a> — {escape_md(cell["fetched_at"])} — {escape_md(cell["method"])}')
         md.append("| " + " | ".join(display[k] for k in fields) + " |")
     md += ["", "Evidence: evidence.csv and table.json.", "", *footnotes]
+    if span_note:
+        md += ["", span_note]
     if table["issues"]:
         md += ["", "Merge issues:", *["- " + escape_md(json.dumps(issue, ensure_ascii=False)) for issue in table["issues"]]]
     headings = "".join(f"<th>{html.escape(k)}</th>" for k in fields)
     body = []
     for row, values in zip(rows, flat):
+        display = visits_display(values)
         cells = []
         for key in fields:
-            value = html.escape(values[key])
+            value = html.escape(display[key])
             evidence_cell = row["cells"].get(key)
             if evidence_cell and evidence_cell["verification"] == "verified" and safe_link(evidence_cell["source_url"]):
                 title = html.escape(f'{evidence_cell["fetched_at"]} · {evidence_cell["method"]}', quote=True)
@@ -104,6 +142,7 @@ def export(table, directory):
               '.table{overflow:auto}pre{white-space:pre-wrap}a{color:#1759ba}</style><h1>Competitor survey</h1>'
               '<p>Offline report. Traffic is modelled, not owner analytics. Homepages and cells have not been verified by this core.</p>'
               '<p>Full cell provenance: evidence.csv and table.json. Interactive charts are deferred.</p>'
+              + (f'<p>{html.escape(span_note)}</p>' if span_note else '') +
               f'<div class="table"><table><thead><tr>{headings}</tr></thead><tbody>{"".join(body)}</tbody></table></div>'
               f'<details><summary>Recorded rounds and provider outcomes</summary><pre>{summary}</pre></details>'
               f'<details><summary>Merge issues and ambiguous matches</summary><pre>{issues}</pre></details></html>')
