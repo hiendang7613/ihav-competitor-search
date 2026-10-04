@@ -19,4 +19,4 @@
 - Automated chatbot delivery and answer ingestion await child capabilities.
 - Full cell verification, automatic survey orchestration and interactive charts.
 
-This is an unreleased source milestone, not a published version or live-provider qualification.
+This is the first public source release. It is not a live-provider qualification.

@@ -264,8 +264,8 @@ the explicit network stages. See [CLI implementation](plugins/ihav-competitor-se
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md). Tests use synthetic/saved fixtures and
-must not contact live websites. See [CHANGELOG.md](CHANGELOG.md) for the unreleased
-`0.1.0` work and [SECURITY.md](SECURITY.md) for safe vulnerability reporting.
+must not contact live websites. See [CHANGELOG.md](CHANGELOG.md) for the
+`0.1.0` release and [SECURITY.md](SECURITY.md) for safe vulnerability reporting.
 
 ## License
 
