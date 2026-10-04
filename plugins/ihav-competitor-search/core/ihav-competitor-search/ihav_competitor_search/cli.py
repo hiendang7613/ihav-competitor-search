@@ -12,6 +12,7 @@ from .render import atomic_write, export
 from .visits import CounterVisitStage, lookup_hosts, source_blocked
 from .homepages import HTTPHomepageStage, check_homepages, confirm_homepage, apply_homepage_decisions
 from .chatbots import WebChatChild, prepare, ask, collect
+from .manual import prompt, import_answer, validate_round
 
 
 def load(path):
@@ -28,13 +29,17 @@ def run_path(project, run_id):
     return directory
 
 
-def synthesize(directory):
+def synthesize(directory, *, through_round=None):
     request = load(directory / "request.json")
     options = request.get("options", {})
     table = empty_table()
-    rounds = sorted((directory / "rounds").iterdir(), key=lambda p: int(p.name))
+    rounds_root = directory / "rounds"
+    rounds = list(rounds_root.iterdir()) if rounds_root.exists() else []
     if any(not folder.is_dir() or not re.fullmatch(r"[1-9][0-9]*", folder.name) for folder in rounds):
         raise ValueError("round folders must be positive integers")
+    rounds.sort(key=lambda p: int(p.name))
+    if through_round is not None:
+        rounds = [folder for folder in rounds if int(folder.name) <= through_round]
     limit = options.get("rounds", 2)
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
         raise ValueError("rounds must be a positive integer")
@@ -77,6 +82,15 @@ def main(argv=None):
     choice.add_argument("--url")
     choice.add_argument("--unconfirmed", help="reason official homepage remains unconfirmed")
     confirm.add_argument("--method", choices=["page", "official_search"], default="page")
+    manual_prompt = sub.add_parser("prompt", help="print a copyable prompt; no chatbot call or opt-in")
+    manual_prompt.add_argument("run_id")
+    manual_prompt.add_argument("--round", type=int, default=1)
+    answer = sub.add_parser("answer", help="store pasted JSON locally; no chatbot call")
+    answer.add_argument("run_id")
+    answer.add_argument("--round", type=int, required=True)
+    answer.add_argument("--provider", required=True)
+    answer.add_argument("--file", default="-", help="UTF-8 answer file; - or omitted reads stdin")
+    answer.add_argument("--replace", action="store_true")
     for command in ("ask", "resume", "collect"):
         chatbot = sub.add_parser(command, help="gated chatbot stage; current child lacks required delivery capabilities")
         chatbot.add_argument("run_id")
@@ -88,7 +102,22 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         directory = run_path(args.project, args.run_id)
-        if args.command in {"ask", "resume", "collect"}:
+        if args.command == "prompt":
+            validate_round(directory, args.round)
+            table = synthesize(directory, through_round=args.round - 1)[0] if args.round > 1 else None
+            if args.round > 1 and not table["rounds"]:
+                raise ValueError("later rounds require prior recorded answers")
+            print(prompt(directory, args.round, table), end="")
+        elif args.command == "answer":
+            if args.file == "-":
+                raw = sys.stdin.read()
+            else:
+                with Path(args.file).open(encoding="utf-8", newline="") as handle:
+                    raw = handle.read()
+            record = import_answer(directory, args.round, args.provider, raw, replace=args.replace)
+            print(json.dumps(record, ensure_ascii=False))
+            return 2 if record["status"] == "parse_failed" else 0
+        elif args.command in {"ask", "resume", "collect"}:
             child = WebChatChild(args.web_chat, args.project)
             if args.command == "collect":
                 result = collect(directory, child, args.round)
@@ -102,7 +131,10 @@ def main(argv=None):
         elif args.command == "status":
             request = load(directory / "request.json")
             visits = load(directory / "visits.json") if (directory / "visits.json").exists() else {}
+            table, _ = synthesize(directory)
             print(json.dumps({"run_id": args.run_id, "request": request,
+                              "rounds": table["rounds"],
+                              "mentioned_by": {row["candidate_id"]: row["mentioned_by"] for row in table["rows"]},
                               "rendered": (directory / "table.json").exists(),
                               "lookup": {"recorded_hosts": len(visits),
                                          "blocked": any(source_blocked(v) for v in visits.values()),

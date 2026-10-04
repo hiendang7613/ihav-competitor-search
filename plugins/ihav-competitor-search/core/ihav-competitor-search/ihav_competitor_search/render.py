@@ -117,6 +117,9 @@ def export(table, directory):
                 footnotes.append(f'{n}. <a href="{url}">{escape_md(cell["source_url"])}</a> — {escape_md(cell["fetched_at"])} — {escape_md(cell["method"])}')
         md.append("| " + " | ".join(display[k] for k in fields) + " |")
     md += ["", "Evidence: evidence.csv and table.json.", "", *footnotes]
+    if any(p.get("method") == "manual_paste" for r in table["rounds"] for p in r["providers"]):
+        md += ["", "Recorded rounds (manual_paste means a person pasted the answer; no automated send):",
+               escape_md(json.dumps(table["rounds"], ensure_ascii=False))]
     if span_note:
         md += ["", span_note]
     if table["issues"]:

@@ -131,6 +131,9 @@ def prepare(directory, child, round_number):
 
 def ask(directory, child, round_number=1, *, opt_in=False):
     with ask_lock(directory):
+        answer_dir = directory / "rounds" / str(round_number) / "answers"
+        if any(read(path).get("method") == "manual_paste" for path in answer_dir.glob("*.json")):
+            raise ValueError("round has manual_paste answers; use a separate round for automated launch")
         request, caps, outbound = prepare(directory, child, round_number)
         folder = directory / "rounds" / str(round_number)
         folder.mkdir(parents=True, exist_ok=True)

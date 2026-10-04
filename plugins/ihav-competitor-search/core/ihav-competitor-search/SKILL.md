@@ -1,12 +1,38 @@
 ---
 name: ihav-competitor-search
-description: Inspect or render saved competitor tables, check homepages, look up confirmed traffic, or prepare a capability-gated chatbot round with explicit consent. Full survey orchestration is not implemented.
+description: Survey competitors with local copy/paste prompts and JSON answers, render saved tables, check homepages, or look up confirmed traffic. Automated chatbot launch remains capability-gated.
 ---
 
 # Offline competitor tables
 
 Python 3.10 or newer, standard library only. Status/render are offline; lookup
 calls the installed counter and may access the network.
+
+## Manual answer walkthrough
+
+For a saved run with domain text in request.json, use the local manual path:
+
+```
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> prompt <run-id>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> answer <run-id> --round 1 --provider chatgpt --file <answer.txt>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> render <run-id>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> prompt <run-id> --round 2
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> answer <run-id> --round 2 --provider chatgpt --file <answer-two.txt>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> render <run-id>
+```
+
+The user copies the exact printed prompt to each chatbot and pastes its answer
+into a UTF-8 file. Repeat answer for each provider. Omit --file or use --file -
+for stdin. Plain and fenced JSON require columns/candidates arrays. Invalid text
+is saved as parse_failed with exact raw text and exit 2; valid input returns 0.
+Duplicate round/provider imports need explicit --replace; it overwrites the old
+answer. Re-render after a replacement. Never mix manual and launched answers in
+one round. Later prompts rebuild prior rounds and request only new candidates
+and the configured new-column budget. No child, provider call or opt-in is needed.
+Keep method manual_paste in rounds, mentions and cell evidence; the provider name
+is user-supplied provenance, not verified provider authorship. Manual import does
+not authorize host sends, homepage GETs or traffic lookup, or verify other cells.
+Continue with check, explicit confirm, lookup and render under existing authority.
 
 ## Chatbot preparation and consent
 
@@ -27,7 +53,7 @@ Unknown launch intent requires manual child reconciliation; never relaunch it.
 Use `collect` for one status snapshot, without sends. It records partial and
 sent_unknown outcomes and zero-answer stop reasons. Child completion is not proof
 of parsed answers. The five-minute saved deadline bounds local waiting only.
-Delivery callbacks and answer ingestion are unavailable until the released child
+Delivery callbacks and automated answer ingestion are unavailable until the released child
 contract is reconciled. Do not start background delivery commands on this release.
 Later --round N requires prior collected status and saved synthesis table.json.
 

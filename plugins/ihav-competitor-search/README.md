@@ -5,6 +5,52 @@ exports a table with per-cell evidence. An explicit `lookup` command calls the
 installed visit-counter dependency. It does not run a full competitor survey.
 The package uses Python 3.10+ and the standard library only.
 
+## Manual copy/paste survey
+
+Manual mode works without ihav-web-chat. Start with a saved run at
+`.ihav_space/ihav-competitor-search/runs/<run-id>/` containing `request.json`:
+
+```json
+{"domain":"your domain text", "options":{"rounds":2,"max_new_columns":5}}
+```
+
+Run this local walkthrough with the shared script:
+
+```
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> prompt <run-id>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> answer <run-id> --round 1 --provider chatgpt --file <pasted-answer.txt>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> answer <run-id> --round 1 --provider gemini --file <another-answer.txt>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> render <run-id>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> prompt <run-id> --round 2
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> answer <run-id> --round 2 --provider chatgpt --file <round-two-answer.txt>
+python3 <skill-directory>/scripts/competitors.py --project <calling-project> render <run-id>
+```
+
+Copy the printed prompt into each chatbot yourself and save its JSON answer as
+UTF-8 text. The plugin sends nothing and does not create an opt-in record.
+`prompt` prints only the exact prompt, without writing state or discovering a
+child. Later prompts rebuild the current table from prior recorded rounds rather
+than stale exports; they ask for only new candidates and up to the configured
+new-column budget. Provider selection is your choice in manual mode.
+
+`answer` accepts plain or fenced JSON with `columns` and `candidates` arrays.
+Omit --file, or use --file -, to read stdin. It saves the exact raw text, provider,
+date and method `manual_paste` in rounds/<n>/answers/<provider>.json. Invalid text
+is retained with status `parse_failed` and returns exit 2; valid input returns 0.
+Candidate/column issues still use the existing conservative merge rules.
+Provider names allow letters, digits, dots, underscores and hyphens, starting
+with a letter or digit, up to 128 characters. Duplicate round/provider imports
+are refused unless --replace; replacement overwrites that saved answer, so keep
+your source text if you need the older version. Re-render after imports/replacements.
+Do not mix manual imports and automated launches in one round.
+
+Status, round outcomes, mentioned_by and cell evidence label pasted answers as
+`manual_paste`; this records how the answer entered the plugin, not proof that
+the named provider produced it. The existing check, explicit confirm, lookup and
+render commands then work as described below. Check and lookup can access the
+network and still require their own task authorization. Other cells remain
+unverified; manual import does not make chatbot claims true.
+
 ## Gated chatbot preparation
 
 The installed ihav-web-chat at commit `6c9f6da` exposes run, status and providers,
@@ -54,7 +100,7 @@ not evidence that usable answers were delivered or merged.
 Later rounds use --round N and require the prior collected round plus saved
 table.json. Outbound synthesis contains only names, homepages and accepted column
 values; raw observations, request notes and evidence are excluded. Status outcomes
-appear in rendered JSON and HTML. Delivery waiting/reading, answer ingestion and
+appear in rendered JSON and HTML. Delivery waiting/reading, automated answer ingestion and
 automatic orchestration remain deferred until their released schema is known.
 
 From the repository root:

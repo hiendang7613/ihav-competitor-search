@@ -106,7 +106,10 @@ def merge_round(table, answers, round_number, *, max_new_columns=5, max_total_co
     for envelope in answers:
         provider = envelope["provider"]
         mention = {"provider": provider, "round": round_number}
-        source = f"chatbot:{provider}:r{round_number}"
+        method = "manual_paste" if envelope.get("method") == "manual_paste" else "chatbot"
+        if method == "manual_paste":
+            mention["method"] = method
+        source = f"{method}:{provider}:r{round_number}"
         try:
             answer = parse_answer(envelope["raw"])
         except (ValueError, TypeError) as exc:
@@ -187,6 +190,7 @@ def merge_round(table, answers, round_number, *, max_new_columns=5, max_total_co
                 c = by_key[key]
                 raw_unit = next((units[k] for k in mapping if mapping[k] == key), c["unit"])
                 row["cells"][key] = cell(value, kind=c["type"], unit=raw_unit, source=source, fetched_at=envelope.get("fetched_at"))
+                row["cells"][key]["method"] = method
             rows.append(row)
     progress = {"round": round_number, "new_candidates": len(rows) - before[0],
                 "new_columns": len(columns) - before[1], "providers": outcomes}
