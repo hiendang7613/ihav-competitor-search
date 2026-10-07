@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ihav_competitor_search.merge import empty_table, merge_round
+from ihav_competitor_search.merge import MAX_JSON_DEPTH, empty_table, merge_round
 from ihav_competitor_search.rank import apply_visits
 from ihav_competitor_search.visits import CounterVisitStage, counter_path, lookup_hosts, source_blocked
 from ihav_competitor_search.cli import main
@@ -121,6 +121,124 @@ def test_malformed_counter_keeps_raw_and_block(tmp_path,monkeypatch):
     assert record["exit_code"] == 5
     assert record["counter_exit_code"] == 0
     assert record["reason"] == "invalid_counter_response"
+
+
+@pytest.mark.parametrize("raw", [
+    '{"domain":"invalid.example","kind":"estimate","monthly_visits":1e400}',
+    '{"domain":"invalid.example","kind":"estimate","monthly_visits":100,"metadata":{"overflow":1e400}}',
+    '{"domain":"invalid.example","kind":"estimate","monthly_visits":NaN}',
+    '{"domain":"invalid.example","kind":"estimate","monthly_visits":100,"metadata":{"title":"\\ud800"}}',
+    pytest.param(None, id="nesting_depth"),
+])
+def test_invalid_counter_numbers_and_nesting_persist_known_failure(tmp_path, monkeypatch, raw):
+    if raw is None:
+        depth = MAX_JSON_DEPTH + 1
+        raw = '{"nested":' + '[' * depth + '0' + ']' * depth + '}'
+    invocations = []
+    def child_result(*args, **kwargs):
+        invocations.append(args[0])
+        return subprocess.CompletedProcess(args[0], 0, raw, "synthetic diagnostics")
+    monkeypatch.setattr(subprocess, "run", child_result)
+    stage = CounterVisitStage(FAKE, tmp_path)
+    records = lookup_hosts(table("invalid.example"), tmp_path, stage)
+    record = records["invalid.example"]
+    assert record["state"] == "completed" and record["exit_code"] == 5
+    assert record["counter_exit_code"] == 0 and record["reason"] == "invalid_counter_response"
+    assert record["raw_stdout"] == raw and record["raw_stderr"] == "synthetic diagnostics"
+    assert record["protocol_error"] and "raw_json" not in record and "result" not in record
+    assert json.loads((tmp_path / "visits.json").read_text()) == records
+    lookup_hosts(table("invalid.example"), tmp_path, stage)
+    assert len(invocations) == 1
+
+
+@pytest.mark.parametrize("blocked", [False, True])
+def test_deep_estimate_is_terminal_and_safe_to_rank(tmp_path, monkeypatch, blocked):
+    primary = "blocked" if blocked else "ok"
+    raw = ('{"contract_version":2,"domain":"deep.example","kind":"estimate",'
+           '"monthly_visits":100,"providers":[{"name":"webtrafficchecker","outcome":"'
+           + primary + '"}],"metadata":' + '[' * MAX_JSON_DEPTH + '0' + ']' * MAX_JSON_DEPTH + '}')
+    invocations = []
+    def child_result(*args, **kwargs):
+        invocations.append(args[0])
+        return subprocess.CompletedProcess(args[0], 0, raw, "depth diagnostics")
+    monkeypatch.setattr(subprocess, "run", child_result)
+    original = table("deep.example", "later.example") if blocked else table("deep.example")
+    records = lookup_hosts(original, tmp_path, CounterVisitStage(FAKE, tmp_path))
+    record = records["deep.example"]
+    assert record["state"] == "completed" and record["exit_code"] == 5
+    assert record["counter_exit_code"] == 0 and record["reason"] == "invalid_counter_response"
+    assert record["raw_stdout"] == raw and record["raw_stderr"] == "depth diagnostics"
+    assert "64 container levels" in record["protocol_error"]
+    assert "raw_json" not in record and "result" not in record
+    assert source_blocked(record) is blocked
+    assert apply_visits(original, records)["rows"][0]["lookup_status"] == "lookup_failed"
+    assert json.loads((tmp_path / "visits.json").read_text()) == records
+    if blocked:
+        assert records["later.example"]["visits_unavailable"] == "blocked"
+    lookup_hosts(original, tmp_path, CounterVisitStage(FAKE, tmp_path))
+    assert len(invocations) == 1
+
+
+@pytest.mark.parametrize("depth", [MAX_JSON_DEPTH + 1, 1100])
+def test_legacy_deep_visits_are_refused_without_rewriting_or_dispatch(tmp_path, monkeypatch, depth):
+    raw = ('{"deep.example":{"exit_code":5,"state":"completed","raw_json":{"nested":'
+           + '[' * depth + '0' + ']' * depth + '}}}')
+    path = tmp_path / "visits.json"
+    path.write_text(raw)
+    before = path.read_bytes()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("legacy response must not trigger another lookup")
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    original = table("deep.example")
+    nested = 0
+    for _ in range(depth):
+        nested = [nested]
+    record = {"deep.example": {"exit_code": 5, "state": "completed", "raw_json": {"nested": nested}}}
+    with pytest.raises(ValueError, match="JSON nesting exceeds"):
+        apply_visits(original, record)
+    with pytest.raises(ValueError, match="JSON nesting exceeds"):
+        lookup_hosts(original, tmp_path, CounterVisitStage(FAKE, tmp_path))
+    assert path.read_bytes() == before
+    assert not (tmp_path / "lookup.lock").exists()
+
+
+def test_counter_at_depth_limit_remains_reusable_and_rankable(tmp_path, monkeypatch):
+    depth = MAX_JSON_DEPTH - 1
+    raw = ('{"domain":"boundary.example","kind":"estimate","monthly_visits":100,"metadata":'
+           + '[' * depth + '0' + ']' * depth + '}')
+    invocations = []
+    def child_result(*args, **kwargs):
+        invocations.append(args[0])
+        return subprocess.CompletedProcess(args[0], 0, raw, "")
+    monkeypatch.setattr(subprocess, "run", child_result)
+    original = table("boundary.example")
+    records = lookup_hosts(original, tmp_path, CounterVisitStage(FAKE, tmp_path))
+    assert records["boundary.example"]["exit_code"] == 0
+    assert apply_visits(original, records)["rows"][0]["lookup_status"] == "estimate"
+    assert lookup_hosts(original, tmp_path, CounterVisitStage(FAKE, tmp_path)) == records
+    assert len(invocations) == 1
+
+
+@pytest.mark.parametrize("exit_code", [0, 4])
+@pytest.mark.parametrize("metric", ['1e400', '"\\ud800"'])
+def test_invalid_counter_payload_retains_primary_block_and_stops(tmp_path, monkeypatch, exit_code, metric):
+    raw = ('{"contract_version":2,"domain":"blocked.example","kind":"estimate",'
+           '"monthly_visits":' + metric + ',"providers":[{"name":"webtrafficchecker","outcome":"blocked"}]}')
+    invocations = []
+    def child_result(*args, **kwargs):
+        invocations.append(args[0])
+        return subprocess.CompletedProcess(args[0], exit_code, raw, "")
+    monkeypatch.setattr(subprocess, "run", child_result)
+    stage = CounterVisitStage(FAKE, tmp_path)
+    records = lookup_hosts(table("blocked.example", "later.example"), tmp_path, stage)
+    record = records["blocked.example"]
+    assert record["exit_code"] == (4 if exit_code == 4 else 5)
+    assert record["counter_exit_code"] == exit_code and record["primary_blocked"] is True
+    assert record["raw_stdout"] == raw and "raw_json" not in record
+    assert source_blocked(record) is True
+    assert records["later.example"]["visits_unavailable"] == "blocked"
+    lookup_hosts(table("new.example"), tmp_path, stage)
+    assert len(invocations) == 1
 
 def test_successful_fallback_stops_after_primary_block(tmp_path):
     stage = CounterVisitStage(FAKE,tmp_path)

@@ -7,11 +7,15 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
+from .merge import MAX_JSON_DEPTH, validate_json_value
 from .render import atomic_write
 
 
 def source_blocked(record):
     """Use v2 provider outcomes; retain the legacy exit/prose rule for v1."""
+    # Exit 4 is authoritative even if the error's v2 provider list is corrupt.
+    if record.get("exit_code") == 4:
+        return True
     payload = record.get("result") or record.get("raw_json") or {}
     version = payload.get("contract_version") if isinstance(payload, dict) else None
     if isinstance(version, int) and not isinstance(version, bool) and version >= 2:
@@ -19,7 +23,7 @@ def source_blocked(record):
         return isinstance(providers, list) and any(
             isinstance(provider, dict) and provider.get("name") == "webtrafficchecker"
             and provider.get("outcome") == "blocked" for provider in providers)
-    if record.get("exit_code") == 4 or record.get("primary_blocked") is True:
+    if record.get("primary_blocked") is True:
         return True
     notes = payload.get("notes", []) if isinstance(payload, dict) else []
     if not isinstance(notes, list):
@@ -55,14 +59,20 @@ class CounterVisitStage:
                                 text=True, encoding="utf-8", errors="replace", timeout=self.timeout)
         record = {"exit_code": result.returncode, "counter_exit_code": result.returncode,
                   "raw_stdout": result.stdout, "raw_stderr": result.stderr, "state": "completed"}
+        parsed_blocked = False
         try:
             payload = json.loads(result.stdout, parse_constant=lambda v: (_ for _ in ()).throw(ValueError(f"invalid number {v}")))
             if not isinstance(payload, dict):
                 raise ValueError("counter JSON must be an object")
+            parsed_blocked = source_blocked({"raw_json": payload, "exit_code": result.returncode})
+            # Overflowing exponents bypass parse_constant; reject them anywhere
+            # before an otherwise known child outcome reaches durable JSON state.
+            validate_json_value(payload)
             record["raw_json"] = payload
-        except ValueError as exc:
+        except (ValueError, RecursionError) as exc:
             payload = None
             record["protocol_error"] = str(exc)
+            record["primary_blocked"] = parsed_blocked
         if result.returncode == 0 and payload is not None:
             count = payload.get("monthly_visits")
             valid_estimate = (payload.get("kind") == "estimate" and
@@ -72,6 +82,7 @@ class CounterVisitStage:
             rank = payload.get("rank")
             rank_value = rank.get("value") if isinstance(rank, dict) else None
             valid_rank = (payload.get("kind") == "rank_only" and count is None
+                          and payload.get("monthly_visits_text") is None
                           and isinstance(rank_value, int) and not isinstance(rank_value, bool) and rank_value > 0)
             if payload.get("domain") == lookup_host and (valid_estimate or valid_rank):
                 record["result"] = payload
@@ -114,9 +125,15 @@ def lookup_hosts(table, directory, stage, *, max_lookups=100, eligible_hosts=Non
         raise ValueError("max-lookups must be a nonnegative integer")
     path = directory / "visits.json"
     with lookup_lock(directory):
-        visits = json.loads(path.read_text()) if path.exists() else {}
+        try:
+            visits = json.loads(path.read_text()) if path.exists() else {}
+        except RecursionError as exc:
+            raise ValueError("saved counter JSON nesting exceeds the supported limit") from exc
         if not isinstance(visits, dict) or any(not isinstance(v, dict) for v in visits.values()):
             raise ValueError("visits must map lookup hosts to response objects")
+        # The saved host map and response record add two container levels.
+        # Refuse legacy overdeep state before rewriting it or dispatching.
+        validate_json_value(visits, max_depth=MAX_JSON_DEPTH + 2)
         def save():
             atomic_write(path, json.dumps(visits, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         unknown = False

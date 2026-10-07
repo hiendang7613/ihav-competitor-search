@@ -2,19 +2,41 @@
 
 # ihav-competitor-search
 
-**Turn pasted chatbot answers into a competitor table with traffic dates and traceable cells.**
+**Product goal: multi-chatbot search/research through ihav-web-chat, expanding a competitor survey across successive rounds.**
+
+Each new round should carry accepted results forward, discover additional
+candidates and comparison dimensions, and retain provider answers and sources.
+Completion of this primary feature requires an installed multi-provider child,
+observed search/research settings and a live multi-round acceptance run.
+Those requirements are not yet qualified. Manual imports and local tests are
+supporting workflows and do not establish that the primary feature is complete.
 
 The manual workflow works today: print a prompt, copy it into chatbots yourself,
 paste their JSON answers, check and confirm official homepages, look up traffic
 through **ihav-web-visit-counter**, then render JSON, CSV, Markdown and HTML.
 
-**Automated chatbot asking is not ready.** It needs an ihav-web-chat release with
-`delivery read/wait` and `doctor --json`, plus a working live send. Those commands
-exist in ihav-web-chat's development branch but are not released, and no provider
-has a verified live send yet. Until then the capability gate stops with an install
-message instead of sending anything. Full cell verification,
-automatic survey orchestration and interactive charts are also not built.
+**Child integration is implemented; live provider delivery is not qualified.**
+New dispatch requires versioned queue-admission and pre-admission-refusal contracts
+from ihav-web-chat, plus its commands, state directory and supported providers.
+A child without those contracts stops before dispatch, regardless of its version.
+Existing known child IDs remain collectable using their saved provider scope.
+Select names from the child's advertised provider inventory; `--providers all`
+selects that full inventory. The default ChatGPT/Gemini/Perplexity selection is
+refused if any requested provider is unsupported. Preview the exact selection
+before approving outbound scope.
+`survey` advances one saved queue or collection step, `verify` records checked
+official-page evidence, and HTML supports sorting, filtering and numeric visit bars.
+Offline fixtures validate these boundaries; they do not establish a working live send.
 The working manual path does not call chatbots or require ihav-web-chat.
+
+The additive research branch accepts `--research-targets-file` on `init` or
+`survey`. It requires at least two explicitly selected research descriptors that
+match `doctor --json`'s exact target inventory and a budget of at least two rounds.
+Real providers currently advertise no qualified descriptors, so this branch stops
+before dispatch for those providers. Do not invent mode IDs or use plain chat,
+citations, parsed JSON or a preparation event as research evidence. See the
+[typed research contract](plugins/ihav-competitor-search/references/research-contract.md).
+Its synthetic offline tests establish the consumer boundary, not live UI acceptance.
 
 [Install](#install) · [Demo](#demo) · [Usage](#usage) · [Accuracy](#accuracy-honestly) · [Privacy](#privacy-and-local-files)
 
@@ -31,8 +53,9 @@ python3 plugins/ihav-competitor-search/core/ihav-competitor-search/scripts/compe
 For Claude Code and Codex plugin discovery, this repository contains separate
 [Claude marketplace](.claude-plugin/marketplace.json) and
 [Codex marketplace](.agents/plugins/marketplace.json) manifests and host skills.
-Host installation/discovery has not been qualified. The source-script workflow
-below is the current executable entry point; this is not a published release.
+The package follows both hosts' manifest contracts. Local installation and CLI
+checks are separate from loading a skill in a fresh native session and provider delivery.
+This checkout contains unreleased changes; its existing release tag stays unchanged.
 
 Traffic lookup additionally needs an installed **ihav-web-visit-counter** script.
 Pass its `scripts/visits.py` path with `--counter`, or set `IHAV_VISIT_COUNTER`.
@@ -87,14 +110,18 @@ the repository root. Add `.ihav_space/` to the calling project's `.gitignore`.
 
 ### 1. Create a saved run and copy the prompt
 
-Use a fresh run name. Create
-`.ihav_space/ihav-competitor-search/runs/my-survey/request.json` containing:
+Use a fresh run name. Create the local request without contacting any child:
+
+```bash
+python3 plugins/ihav-competitor-search/core/ihav-competitor-search/scripts/competitors.py init "document collaboration tools" --run-id my-survey
+```
+
+Existing manually created requests remain supported:
 
 ```json
 {"domain":"document collaboration tools", "options":{"rounds":2,"max_new_columns":5}}
 ```
 
-The CLI operates on saved runs; it does not create that request for you.
 Then print the exact prompt:
 
 ```bash
@@ -162,6 +189,13 @@ The complete sequence is tested with fake pages and a fake counter in
 
 ## What the result means
 
+For the queue/collection workflow and the `verify` evidence schema, read the
+[bounded survey and page evidence reference](plugins/ihav-competitor-search/README.md#bounded-survey-and-page-evidence).
+Start with `survey "your domain" --providers all --web-chat <installed-child-cli> --dry-run`.
+After explicit consent, use `--opt-in` and continue the returned run with
+`survey --run-id <id> --web-chat <installed-child-cli>`.
+Each call performs one bounded step. Unknown sends are reconciled, never repeated.
+
 Numeric estimates sort by descending visits, with own-host rows before shared-host
 rows inside their group. Shared products carry `shared_domain: true`; a host's
 traffic is not a product's individual traffic. Provider mention counts never
@@ -180,7 +214,7 @@ and [core tests](tests/test_core.py).
 person verifies homepage → `confirm` → `lookup` → `render` with traffic.
 
 The two network boundaries are homepage checks and the counter dependency.
-The current core performs no full cell-verification pass. See the short
+The core validates supplied official-page cell checks without fetching facts. See the short
 [implementation guide](docs/public/how-it-works.md) or the
 [command reference](plugins/ihav-competitor-search/README.md).
 
@@ -195,8 +229,8 @@ The current core performs no full cell-verification pass. See the short
   scrape dates and stale markers for display-only values, and one note when
   available estimate dates span more than `14` calendar days. These timestamps
   do not establish a comparable reporting month.
-- **Candidate lists and other cells remain unverified.** Homepage confirmation
-  verifies only that relationship. The final `verify` stage is not built.
+- **Unchecked facts remain unverified.** Homepage confirmation covers that
+  relationship; `verify` records individual host/human page checks and their limits.
 - **`manual_paste` is user-supplied data.** A typed provider name is attribution,
   not proof of authorship, factual accuracy, completeness or market coverage.
 
@@ -246,19 +280,22 @@ locks or unknown outcomes before attempting recovery. See the
 
 ## FAQ
 
-**Can it ask all chatbots automatically?** Not yet. `ask`, `resume` and `collect`
-exist, but the child lacks required delivery and versioned capability commands.
-Use manual mode; an opt-in does not bypass the capability gate.
+**Can it ask all chatbots automatically?** It can queue selected providers supported
+by a child that passes the versioned recovery gate. Available providers come from
+that child's current inventory; `--providers all` selects every advertised name.
+Review the preview before opting in. Queue acceptance does not prove a browser
+worker sent the prompt or captured a reply.
 
-**Can it verify every fact?** No. Only explicit homepage confirmation is built;
-the final verification stage is not implemented. Other cells stay unverified.
+**Can it verify every fact?** The host can submit individual official-page checks
+within the configured scope. The core validates their attribution and types.
+Missing, unchecked and out-of-scope facts remain visible as unverified.
 
 **Why is a candidate missing a visit count?** It may be unconfirmed, have no
 provider data, be rank-only, or remain unqueried after a block or lookup cap.
 Read `lookup_status`, `lookup_reason` and `rank_basis`, rather than assuming zero.
 
 **Does render access the network?** No. It rebuilds exports from saved inputs.
-`prompt`, `answer`, `status` and `confirm` are local too; `check` and `lookup` are
+`init`, `prompt`, `answer`, `status`, `confirm` and `verify` are local too; `check` and `lookup` are
 the explicit network stages. See [CLI implementation](plugins/ihav-competitor-search/core/ihav-competitor-search/ihav_competitor_search/cli.py).
 
 ## Contributing

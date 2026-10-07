@@ -97,7 +97,11 @@ def test_untrusted_html_and_verified_links(tmp_path):
     c.update(verification="verified",source_url="https://example.com/source",method="page",fetched_at="2026-10-03")
     export(table,tmp_path)
     report = (tmp_path/"report.html").read_text()
-    assert "<script>" not in report
+    from ihav_competitor_search.render import REPORT_SCRIPT
+    assert report.count("<script>") == 1
+    assert "<script>" + REPORT_SCRIPT + "</script>" in report
+    assert "<script>alert(1)</script>" not in report
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in report
     assert 'href="https://example.com/source"' in report
     assert "&#124;" in (tmp_path/"table.md").read_text()
     c["source_url"] = "javascript:alert(1)"

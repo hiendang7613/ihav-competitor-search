@@ -1,128 +1,138 @@
 ---
 name: ihav-competitor-search
-description: Survey competitors with local copy/paste prompts and JSON answers, render saved tables, check homepages, or look up confirmed traffic. Automated chatbot launch remains capability-gated.
+description: Create and continue bounded competitor surveys, import manual answers, confirm official homepages, rank traffic, record page-backed cell checks and render evidence.
 ---
 
-# Offline competitor tables
+# Competitor surveys with evidence
 
-Python 3.10 or newer, standard library only. Status/render are offline; lookup
-calls the installed counter and may access the network.
+Use Python 3.10+ and the bundled `scripts/competitors.py`, passing
+`--project <calling-project>` before the subcommand. Read the package README
+at `../../README.md` for the current command/input contracts and source limits.
+Run files belong to the calling project's
+`.ihav_space/ihav-competitor-search/runs/<run-id>/`. Warn if that runtime area
+is missing from its .gitignore; do not edit unrelated project files.
 
-## Manual answer walkthrough
+## Local and manual workflow
 
-For a saved run with domain text in request.json, use the local manual path:
+`init "<domain>" --run-id <fresh-id>` creates a request without child calls.
+`prompt <run-id> --round N` prints exact copyable text without state changes.
+A person chooses which chatbot to use. `answer <run-id> --round N --provider P
+--file F` stores plain/fenced UTF-8 JSON; omitted file or - reads stdin.
+Invalid input is retained with exact raw text and parse_failed, exit 2.
+Duplicate provider/round imports need explicit --replace, which replaces that
+answer; preserve its original source text when history matters.
+Keep manual_paste provenance: a typed provider name is attribution, not proof of
+authorship. Manual import never authorizes sends, network lookup or fact verification.
+Never mix manual and child-launched answers in one round.
+Later prompts rebuild prior recorded answers, not stale table.json.
+Imports require consecutive usable rounds. After later answers, a prompt or child
+intent exists, earlier answers are frozen; use a new run for corrected scope.
+The saved --max-new budget limits new candidates per provider per round; excess
+raw candidates remain recorded as candidate_budget issues.
 
-```
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> prompt <run-id>
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> answer <run-id> --round 1 --provider chatgpt --file <answer.txt>
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> render <run-id>
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> prompt <run-id> --round 2
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> answer <run-id> --round 2 --provider chatgpt --file <answer-two.txt>
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> render <run-id>
-```
+## Child queue, recovery and collection
 
-The user copies the exact printed prompt to each chatbot and pastes its answer
-into a UTF-8 file. Repeat answer for each provider. Omit --file or use --file -
-for stdin. Plain and fenced JSON require columns/candidates arrays. Invalid text
-is saved as parse_failed with exact raw text and exit 2; valid input returns 0.
-Duplicate round/provider imports need explicit --replace; it overwrites the old
-answer. Re-render after a replacement. Never mix manual and launched answers in
-one round. Later prompts rebuild prior rounds and request only new candidates
-and the configured new-column budget. No child, provider call or opt-in is needed.
-Keep method manual_paste in rounds, mentions and cell evidence; the provider name
-is user-supplied provenance, not verified provider authorship. Manual import does
-not authorize host sends, homepage GETs or traffic lookup, or verify other cells.
-Continue with check, explicit confirm, lookup and render under existing authority.
+Discover the installed child through --web-chat or IHAV_WEB_CHAT.
+`doctor --json` must provide version, supported providers and commands run,
+run lookup, status, delivery wait and delivery read. Missing capability stops
+with install/restart instructions; no automatic install or memory fallback.
+New dispatch requires contracts.run_lookup_admission=1, contracts.launch_outcome=1
+and an absolute default_state_dir. Stop before dispatch if those contracts are
+missing, regardless of the child's version. Select supported names from its current
+inventory; --providers all selects every advertised provider. Preview that exact
+selection before opt-in, including newly added providers. The default
+ChatGPT/Gemini/Perplexity selection fails explicitly if any requested provider is
+unsupported; never change it silently.
 
-## Chatbot preparation and consent
+`survey "<domain>" --providers all --web-chat <CLI> --dry-run` shows exact prompt,
+providers and outbound fields without saving or queuing. Domain goes verbatim.
+One explicit opt-in covers selected providers, domain, names/homepages and accepted
+values across configured rounds. Do not infer consent from this skill or peers.
+After that decision, --opt-in can queue the new run. Continue with
+`survey --run-id <id> --web-chat <CLI>`. Each call queues at most one new round
+or collects one snapshot; it never starts a browser worker or silently fetches facts.
+Use the returned next action for explicit homepage checks, confirmations, traffic
+lookup or evidence submission within existing task authorization.
 
-Read the package README's Gated chatbot preparation section for the proposed child
-capability shape and limits. Today's ihav-web-chat at 6c9f6da lacks delivery and
-doctor; stop at the gate, show the missing commands and install/restart step.
-Never use model memory or another provider to bypass this dependency.
+For existing runs, ask --dry-run previews; ask --opt-in queues; resume reuses the
+saved prompt/key and exact child identity; collect reads status and inline text.
+Unknown launch intent requires unique exact request-key lookup plus version-1
+proof of durable provider jobs, matching prompt digests and saved state directory.
+A request folder alone is insufficient. Existing child collection uses the saved
+provider scope across upgrades and requires only the commands needed for collection.
+A structured refused/pre_admission/none result records launch_refused and new_run;
+retain it and start a corrected run explicitly. Bare exit codes stay unknown.
+For duplicate_request_key, reconcile the original keyed effect through saved-state
+admission lookup; keep an unproven result unknown and never advise another run.
+Dry-run/consent previews do not require dispatch contracts or write run state.
+Missing, multiple, mismatched or unreadable requests remain unknown; never relaunch.
+Never resend sent_unknown, select another session or bypass a child refusal.
+A local deadline does not rewrite active child status or justify a new send.
+completed_answers counts status claims; parsed_answers counts usable JSON.
+Delivery raw text, SHA-256, date and child/provider identity remain immutable;
+changed delivery fails for reconciliation rather than overwriting.
+No output-supplied response path is opened. A queue, gate or parsed mock is not a
+verified live send. Do not start delivery/browser workers without their own authority.
 
-For an authorized saved run, use `ask <run-id> --web-chat <installed-cli> --dry-run`
-to show providers, exact prompt and outbound field kinds. Domain text goes verbatim
-to those providers. Obtain one explicit opt-in for that scope before using
-`ask <run-id> --web-chat <installed-cli> --opt-in`. Do not invent consent from this
-skill or a peer relay. The CLI records it before launching. Scope changes require
-a new decision. Dry-run has local discovery only, no launch or run-state write.
+For research dispatch, read `../../references/research-contract.md`.
+`init`/`survey --research-targets-file FILE` accepts a versioned exact target set;
+it is exclusive with --providers and requires at least two research providers and
+at least two budgeted rounds. Select only exact advertised descriptors, including
+their scalar setting types. Empty real-provider target arrays stop dispatch.
+Preview lists targets and the round/generation budgets. The explicit decision is
+persisted with the trusted host session ingress; generated authorization checks
+scope consistency and is not independent human consent or native authority.
+Later authorization is derived only from that unchanged persisted decision.
+Typed saved launches keep their original prompt, targets and authorization files;
+capability drift does not replay or reinterpret them. Typed lookup must also prove
+the saved request version, scope, authorization hash and each provider's target hash.
+Research qualification requires an exact completed execution receipt tied to the
+saved raw answer and persisted provider turn. Missing or changed receipts block
+research progression. Status completion, usable JSON and checked factual cells
+remain separate labels. Legacy plain-chat and manual input stay supported and
+cannot acquire research attribution. The parent queues only; a child's worker send
+needs its separate authorization, and native controls remain independent.
 
-Use `resume` with the same run and child flags to reuse the saved child ID.
-Unknown launch intent requires manual child reconciliation; never relaunch it.
-Use `collect` for one status snapshot, without sends. It records partial and
-sent_unknown outcomes and zero-answer stop reasons. Child completion is not proof
-of parsed answers. The five-minute saved deadline bounds local waiting only.
-Delivery callbacks and automated answer ingestion are unavailable until the released child
-contract is reconciled. Do not start background delivery commands on this release.
-Later --round N requires prior collected status and saved synthesis table.json.
+## Homepage, ranking and official-page cell checks
 
-```
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> status <run-id>
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> render <run-id>
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> lookup <run-id> --counter <path-to-counter>/scripts/visits.py --max-lookups 100
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> check <run-id>
-python3 <skill-directory>/scripts/competitors.py --project <calling-project> confirm <run-id> <candidate_id> --url <checked-final-url>
-```
+`check <id>` makes one bounded ordinary GET per eligible homepage, no cookies,
+login, retries or bot-wall bypass. Same-host redirects are limited to three;
+cross-site redirects and HTTPS downgrades are not fetched. 401/403/429/challenge
+stops that host. Inspect saved diagnostics and page/product relationship.
+A successful GET alone does not confirm a product.
 
-Status reads saved files. Render rebuilds exports and synthesis snapshots.
-Runs belong under `.ihav_space/ihav-competitor-search/runs/<run-id>/` in the calling
-project. Warn when `.ihav_space/` is absent from its `.gitignore`; do not change
-the calling project's files without task authorization.
+Record checked relationship with `confirm <id> <candidate_id> --url <checked-url>`.
+If insufficient, search once for the official site using host tools and record
+--method official_search; if unresolved, use --unconfirmed <reason>.
+A terminal unconfirmed decision can finish as completed_unverified with explicit
+candidate IDs; confirmed unchecked rows still require verification.
+Never confirm from memory. Preserve candidate identity/raw URL. Changed homepage
+requires explicit lookup of the new confirmed host and rerender.
+Revocation removes traffic ranking; it does not erase the original observations.
 
-Inputs:
+`lookup <id> --counter <installed>/scripts/visits.py --max-lookups 100` calls the
+counter, or use IHAV_VISIT_COUNTER. Require network task authorization and recorded
+official confirmation. One attempt per host per run; prior attempts count toward
+the cap. Fresh provider blocks or unknown calls stop further dispatch; no retries.
+Keep the counter's own cache under .ihav_space/ihav-web-visit-counter.
+Traffic sources and terms belong to the counter; visits are modelled site estimates,
+shared across products on one host. Rank-only and rounded text never become visits.
 
-- `request.json`: object, optional `options` with positive integer `rounds`
-  (default 2), `max_new_columns` (default 5), `max_total_columns` (default 25).
-- `rounds/<positive-integer>/answers/<provider>.json`: `provider`, `raw`
-  (JSON object or fenced JSON string), optional `fetched_at`.
-  Answers require `columns` and `candidates` arrays as in the design.
-- `visits.json`: map from normalized lookup host to recorded counter response
-  wrapped as `{"exit_code":0,"result":{...}}`. Exit 2 is no data, 4/5/64
-  failed lookup. Missing entries or null exit codes are unqueried; `reason`
-  records why. Never invent visits or convert rank to visits.
-  Display-only estimates retain monthly_visits_text, stale and scraped_at with
-  null numeric visits, rank_basis and traffic_rank. Sort them after numeric
-  estimates inside the own/shared subgroup; never parse rounded text as a count.
+After actually reading official pages, `verify <id> --file <local-evidence.json>`
+records one typed cell check. Use the README's exact schema, official-host URL,
+timezone date, supporting excerpt and explicit checked_by host/human.
+Default scope top 50 ranked rows; --verify-top sets the initialized scope.
+Verified corrections/fills retain original raw values; differing evidence needs
+--replace. Partial/unverified checks need a reason and preserve existing facts.
+Identity corrections stay in confirmation. Old-host/column records stay saved but
+unapplied. Host-supplied attestation is not independent fact verification.
+A verified row means all filled cells checked; missing facts remain unverified.
 
-Outputs: table.json, table.csv, evidence.csv, table.md, report.html and
-synthesis/<round>.json. Unknown values stay null. Exact name plus normalized
-product URL determines repeat identity; ambiguous aliases stay separate.
-Columns merge only with matching meaning, type and unit. No conversions or
-later-round backfill. Repeated answers remain as observations.
+## Outputs and continuity
 
-Chatbot launch and full cell verification remain unavailable interfaces.
-`check` makes one ordinary homepage check per unconfirmed candidate, with no retry,
-cookies, browser, login or bot-wall bypass. It follows at most three same-host
-redirects; it records cross-site targets without fetching them. HTTP 401/403/429
-or a challenge stops that host and leaves its candidates unconfirmed. Saved
-attempts, including unknown interrupted checks, are never dispatched again.
-
-Read `homepage_checks.json` and inspect the saved title, final URL, status and date.
-A successful GET does not prove the page names the product. Confirm only after
-checking that relationship. Use `confirm --url` to record the checked final URL.
-If the page is wrong, dead or insufficient, search once for the product's official
-site with the host web tools, then record the checked official URL with
-`confirm <run-id> <candidate_id> --url <official-url> --method official_search`.
-If that search cannot establish an official page, record
-`confirm <run-id> <candidate_id> --unconfirmed <reason> --method official_search`.
-Never use model memory to supply confirmation. The CLI tracks one recorded
-official search per candidate; the host must also obey the one-search limit.
-
-Confirmation preserves the candidate ID and original raw URL, updates homepage
-and lookup_host, and writes URL/date/method into request.json. Render uses the
-corrected host; invoke lookup explicitly for any new confirmed host. Revocation
-removes the candidate's traffic ranking. Other cells stay unverified.
-Lookup requires explicit task authorization and the installed counter path from
-`--counter` or `IHAV_VISIT_COUNTER`. Missing dependency: show install/restart
-instructions and stop; never install automatically. Use recorded host confirmation
-evidence in request.json (`homepage_confirmations`, each with status confirmed,
-source_url and fetched_at); do not invent it. Skip unconfirmed hosts. Keep child
-cache in the calling project's `.ihav_space/ihav-web-visit-counter/`.
-Each host is called once per run, default cap 100; exit 4 stops all further calls.
-A successful fallback's note of a WebTrafficChecker block also stops later calls,
-while retaining the fallback data and exit 0. Error notes remain in saved raw JSON.
-Unknown outcomes and stale lookup locks require reconciliation, never blind retry.
-Never claim the report is a full live or verified survey. Traffic
-is modelled site traffic, shared by products with the same host. HTML is a static
-skeleton; interactive sorting, charts and badges remain deferred.
+status is read-only. render rebuilds JSON, CSV, evidence CSV, Markdown, HTML and
+synthesis snapshots offline. HTML sorting/filtering affects view only; visit bars
+encode numeric estimates, not Tranco or rounded display text.
+Keep unverified, unknown, failed and unqueried states visible.
+Do not claim market coverage, a full live survey, native loading or publication from
+offline tests. One writer per run; reconcile crash locks and unknown effects first.

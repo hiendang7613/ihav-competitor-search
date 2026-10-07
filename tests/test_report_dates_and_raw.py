@@ -55,7 +55,7 @@ def test_dates_next_to_values_span_boundary_and_machine_outputs(tmp_path, days, 
     assert [row["analyzed_at"] for row in rows] == [str(first), str(second)]
     with (tmp_path / "evidence.csv").open() as handle:
         reader = csv.DictReader(handle)
-        assert reader.fieldnames == ["candidate_id", "column_key", "value", "raw_value", "raw_unit", "source_url", "fetched_at", "method", "verification", "reason"]
+        assert reader.fieldnames == ["candidate_id", "column_key", "value", "raw_value", "raw_unit", "source_url", "fetched_at", "method", "verification", "reason", "verification_basis", "checked_by", "raw_excerpt"]
         evidence = list(reader)
     assert len(evidence) == 20
     assert all("analyzed" not in row["value"] for row in evidence)

@@ -1,1 +1,10 @@
-{"name":"ihav-competitor-search","version":"0.1.0","description":"Offline competitor synthesis. Live survey is not implemented.","author":{"name":"hiendang7613"},"license":"MIT","skills":"./claude/skills"}
+{
+  "name": "ihav-competitor-search",
+  "version": "0.2.0",
+  "description": "Bounded competitor surveys, traffic ranking and official-page evidence. Live delivery needs qualification.",
+  "author": {
+    "name": "hiendang7613"
+  },
+  "license": "MIT",
+  "skills": "./claude/skills"
+}

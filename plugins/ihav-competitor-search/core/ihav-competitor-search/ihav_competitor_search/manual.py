@@ -1,7 +1,7 @@
 """Local copy/paste answers; never discovers or calls a chatbot child."""
 import re
 
-from .chatbots import ask_lock, preview, read, save
+from .chatbots import ask_lock, preview, read, save, previous_round_table, ensure_round_mutable
 from .homepages import now
 from .merge import parse_answer
 
@@ -21,10 +21,13 @@ def prompt(directory, number, table=None):
 
 
 def import_answer(directory, number, provider, raw, *, replace=False):
-    validate_round(directory, number)
+    request = validate_round(directory, number)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", provider):
         raise ValueError("provider must be a safe name of at most 128 characters")
     with ask_lock(directory):
+        ensure_round_mutable(directory, number)
+        if number > 1:
+            previous_round_table(directory, number - 1, request)
         folder = directory / "rounds" / str(number)
         answers = folder / "answers"
         if answers.resolve() != directory.resolve() / "rounds" / str(number) / "answers":

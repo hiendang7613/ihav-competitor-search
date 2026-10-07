@@ -27,6 +27,8 @@ git diff --check
 See [test_manual.py](tests/test_manual.py) for the full fake workflow,
 [test_homepages.py](tests/test_homepages.py) for fetching/confirmation boundaries,
 and [test_visits.py](tests/test_visits.py) for counter contracts and recovery.
+The offline workflow covers Linux Python 3.10/3.13 and macOS Python 3.13;
+hosted results are available only after this workflow is published and executed.
 
 ## Pull requests
 

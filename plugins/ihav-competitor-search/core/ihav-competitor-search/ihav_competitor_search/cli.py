@@ -1,78 +1,66 @@
 """Read/render saved runs offline; lookup explicitly calls the counter dependency."""
 import argparse
 import json
-import re
 import sys
 import subprocess
 from pathlib import Path
 
-from .merge import empty_table, merge_round, normalize_url
-from .rank import apply_visits
+from .merge import normalize_url
 from .render import atomic_write, export
 from .visits import CounterVisitStage, lookup_hosts, source_blocked
-from .homepages import HTTPHomepageStage, check_homepages, confirm_homepage, apply_homepage_decisions
-from .chatbots import WebChatChild, prepare, ask, collect
+from .homepages import HTTPHomepageStage, check_homepages, confirm_homepage
+from .chatbots import WebChatChild, prepare, ask, collect, preview
 from .manual import prompt, import_answer, validate_round
-
-
-def load(path):
-    return json.loads(path.read_text(encoding="utf-8"), parse_constant=lambda v: (_ for _ in ()).throw(ValueError(f"invalid JSON number: {v}")))
+from .verification import load_evidence, record_cell_evidence
+from .survey import create_run, make_request, progress, run_root, safe_id
+from .synthesis import load, synthesize
+from . import research
 
 
 def run_path(project, run_id):
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", run_id):
-        raise ValueError("invalid run id")
-    root = (project / ".ihav_space" / "ihav-competitor-search" / "runs").resolve()
+    safe_id(run_id)
+    root = run_root(project)
     directory = root / run_id
-    if not directory.is_dir() or directory.resolve().parent != root:
+    if not directory.is_dir() or directory.resolve() != directory:
         raise ValueError("saved run does not exist or escapes the run root")
+    if (directory / "request.json").is_symlink():
+        raise ValueError("saved request escapes the run")
     return directory
-
-
-def synthesize(directory, *, through_round=None):
-    request = load(directory / "request.json")
-    options = request.get("options", {})
-    table = empty_table()
-    rounds_root = directory / "rounds"
-    rounds = list(rounds_root.iterdir()) if rounds_root.exists() else []
-    if any(not folder.is_dir() or not re.fullmatch(r"[1-9][0-9]*", folder.name) for folder in rounds):
-        raise ValueError("round folders must be positive integers")
-    rounds.sort(key=lambda p: int(p.name))
-    if through_round is not None:
-        rounds = [folder for folder in rounds if int(folder.name) <= through_round]
-    limit = options.get("rounds", 2)
-    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-        raise ValueError("rounds must be a positive integer")
-    snapshots = []
-    for folder in rounds[:limit]:
-        answers = [load(p) for p in sorted((folder / "answers").glob("*.json"))]
-        table = merge_round(table, answers, int(folder.name),
-                            max_new_columns=options.get("max_new_columns", 5),
-                            max_total_columns=options.get("max_total_columns", 25))
-        snapshots.append((folder.name, json.dumps(table, ensure_ascii=False, indent=2, allow_nan=False) + "\n"))
-        if table["rounds"][-1]["stop"]:
-            break
-    table = apply_homepage_decisions(table, request, directory)
-    visits = load(directory / "visits.json") if (directory / "visits.json").exists() else {}
-    table = apply_visits(table, visits)
-    table["chatbot_rounds"] = {folder.name: load(folder / "children.json") for folder in rounds
-                               if (folder / "children.json").exists()}
-    table["request"] = request
-    table["stages"] = {"ask": "recorded_input", "merge": "completed", "rank": "recorded_input",
-                       "homepage_check": "recorded_input", "verification": "not_implemented"}
-    return table, snapshots
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, default=Path.cwd(), help="calling project; defaults to cwd")
     sub = parser.add_subparsers(dest="command", required=True)
+    for command in ("init", "survey"):
+        start = sub.add_parser(command, help="create a saved run; survey advances one child queue or collection step")
+        start.add_argument("domain", nargs="?" if command == "survey" else None)
+        start.add_argument("--run-id")
+        selection = start.add_mutually_exclusive_group()
+        selection.add_argument("--providers", default=None, help="comma-separated names, or all")
+        selection.add_argument("--research-targets-file", type=Path,
+                               help="versioned exact research descriptors for at least two providers")
+        start.add_argument("--rounds", type=int, default=2)
+        start.add_argument("--max-new", type=int, default=30)
+        start.add_argument("--max-new-columns", type=int, default=5)
+        start.add_argument("--max-total-columns", type=int, default=25)
+        start.add_argument("--max-lookups", type=int, default=100)
+        start.add_argument("--verify-top", type=int, default=50)
+        start.add_argument("--no-verify", action="store_true")
+        if command == "survey":
+            start.add_argument("--web-chat", type=Path)
+            start.add_argument("--dry-run", action="store_true")
+            start.add_argument("--opt-in", action="store_true")
+    verify = sub.add_parser("verify", help="record checked official-page evidence from a local JSON file; no network")
+    verify.add_argument("run_id")
+    verify.add_argument("--file", type=Path, required=True)
+    verify.add_argument("--replace", action="store_true")
     for command in ("status", "render"):
         sub.add_parser(command).add_argument("run_id")
     lookup = sub.add_parser("lookup", help="call the counter for confirmed hosts; may access the network")
     lookup.add_argument("run_id")
     lookup.add_argument("--counter", type=Path, help="path to installed counter scripts/visits.py")
-    lookup.add_argument("--max-lookups", type=int, default=100)
+    lookup.add_argument("--max-lookups", type=int, default=None, help="explicitly set this run's cap; default saved cap or 100")
     check = sub.add_parser("check", help="one bounded homepage GET per unconfirmed candidate; may access network")
     check.add_argument("run_id")
     confirm = sub.add_parser("confirm", help="record host-agent product confirmation; no network")
@@ -92,7 +80,7 @@ def main(argv=None):
     answer.add_argument("--file", default="-", help="UTF-8 answer file; - or omitted reads stdin")
     answer.add_argument("--replace", action="store_true")
     for command in ("ask", "resume", "collect"):
-        chatbot = sub.add_parser(command, help="gated chatbot stage; current child lacks required delivery capabilities")
+        chatbot = sub.add_parser(command, help="gated child queue, exact recovery or inline delivery ingestion")
         chatbot.add_argument("run_id")
         chatbot.add_argument("--web-chat", type=Path, help="installed child CLI; or IHAV_WEB_CHAT")
         chatbot.add_argument("--round", type=int, default=1)
@@ -101,6 +89,64 @@ def main(argv=None):
             chatbot.add_argument("--opt-in", action="store_true", help="explicit consent after reviewing the preview")
     args = parser.parse_args(argv)
     try:
+        if args.command in {"init", "survey"}:
+            if args.command == "survey" and args.domain is None:
+                if not args.run_id:
+                    raise ValueError("survey needs domain text or --run-id for an existing run")
+                if args.research_targets_file is not None:
+                    raise ValueError("saved research targets are immutable; create a new run to change them")
+                directory = run_path(args.project, args.run_id)
+            else:
+                selection = "all" if args.providers == "all" else args.providers.split(",") if args.providers is not None else None
+                targets = None
+                if args.research_targets_file is not None:
+                    if args.research_targets_file.stat().st_size > research.MAX_METADATA_BYTES:
+                        raise ValueError("research target file exceeds 1 MiB")
+                    targets = research.target_set(load(args.research_targets_file), research_only=True)
+                if args.command == "survey":
+                    from_request = make_request(args.domain, providers=selection, targets=targets, rounds=args.rounds,
+                                                max_new=args.max_new, max_new_columns=args.max_new_columns,
+                                                max_total_columns=args.max_total_columns, max_lookups=args.max_lookups,
+                                                verify_top=args.verify_top, no_verify=args.no_verify)
+                    child = WebChatChild(args.web_chat, args.project)
+                    caps = child.gate(dispatch=args.opt_in and not args.dry_run)
+                    outbound = preview(from_request, caps["providers"])
+                    if targets is not None:
+                        research.require_capabilities(caps, targets)
+                        outbound.update(targets=targets, round_budget=research.budgets(from_request),
+                                        authorization_basis="persisted_trusted_host_scope_consistency")
+                    if args.dry_run or not args.opt_in:
+                        print(json.dumps({"preview": outbound, "dry_run": args.dry_run,
+                                          "state": "preview" if args.dry_run else "consent_required"}))
+                        return 0 if args.dry_run else 2
+                directory = create_run(args.project, args.domain, run_id=args.run_id, providers=selection, targets=targets,
+                                       rounds=args.rounds, max_new=args.max_new, max_new_columns=args.max_new_columns,
+                                       max_total_columns=args.max_total_columns, max_lookups=args.max_lookups,
+                                       verify_top=args.verify_top, no_verify=args.no_verify)
+            args.run_id = directory.name
+            if args.command == "init":
+                print(json.dumps({"run_id": args.run_id, "state": "created", "next": "ask" if targets else "prompt"}))
+                return 0
+            table, _ = synthesize(directory)
+            next_step = progress(directory, table)
+            if next_step["action"] in {"ask", "collect"}:
+                child = WebChatChild(args.web_chat, args.project)
+                number = next_step["round"]
+                prior = synthesize(directory, through_round=number - 1)[0] if number > 1 else None
+                if next_step["action"] == "ask":
+                    _, _, outbound = prepare(directory, child, number, table=prior)
+                    print(json.dumps({"preview": outbound, "dry_run": args.dry_run}), flush=True)
+                    if args.dry_run:
+                        return 0
+                    ask(directory, child, number, opt_in=args.opt_in, table=prior)
+                    next_step = {"state": "awaiting_child", "action": "collect", "round": number}
+                elif not args.dry_run:
+                    ask(directory, child, number, table=prior)
+                    collect(directory, child, number)
+                    table, _ = synthesize(directory)
+                    next_step = progress(directory, table)
+            print(json.dumps({"run_id": args.run_id, **next_step}))
+            return 0
         directory = run_path(args.project, args.run_id)
         if args.command == "prompt":
             validate_round(directory, args.round)
@@ -118,16 +164,22 @@ def main(argv=None):
             print(json.dumps(record, ensure_ascii=False))
             return 2 if record["status"] == "parse_failed" else 0
         elif args.command in {"ask", "resume", "collect"}:
+            prior = synthesize(directory, through_round=args.round - 1)[0] if args.command != "collect" and args.round > 1 else None
             child = WebChatChild(args.web_chat, args.project)
             if args.command == "collect":
                 result = collect(directory, child, args.round)
             else:
-                _, _, outbound = prepare(directory, child, args.round)
+                _, _, outbound = prepare(directory, child, args.round, table=prior)
                 print(json.dumps({"preview": outbound, "dry_run": args.dry_run}), flush=True)
                 if args.dry_run:
                     return 0
-                result = ask(directory, child, args.round, opt_in=args.opt_in)
+                result = ask(directory, child, args.round, opt_in=args.opt_in, table=prior)
             print(json.dumps(result))
+        elif args.command == "verify":
+            table, _ = synthesize(directory)
+            record = record_cell_evidence(table, directory, load_evidence(args.file), replace=args.replace,
+                                          top=table["request"].get("options", {}).get("verify_top", 50))
+            print(json.dumps(record, ensure_ascii=False))
         elif args.command == "status":
             request = load(directory / "request.json")
             visits = load(directory / "visits.json") if (directory / "visits.json").exists() else {}
@@ -139,7 +191,8 @@ def main(argv=None):
                               "lookup": {"recorded_hosts": len(visits),
                                          "blocked": any(source_blocked(v) for v in visits.values()),
                                          "unknown": any(v.get("state") in {"launching", "unknown"} for v in visits.values())},
-                              "stages": {"chatbot": "capability_gated", "homepage": "host_confirmation", "verification": "not_implemented"}}))
+                              "survey": progress(directory, table), "verification": table["verification"],
+                              "stages": {"chatbot": "capability_gated", "homepage": "host_confirmation", "verification": "host_supplied_page_evidence"}}))
         elif args.command == "check":
             table, _ = synthesize(directory)
             checks = check_homepages(table, directory, HTTPHomepageStage())
@@ -152,6 +205,13 @@ def main(argv=None):
         elif args.command == "lookup":
             stage = CounterVisitStage(args.counter, args.project)
             table, _ = synthesize(directory)
+            cap = args.max_lookups if args.max_lookups is not None else table["request"].get("options", {}).get("max_lookups", 100)
+            if type(cap) is not int or cap < 0:
+                raise ValueError("max-lookups must be a nonnegative integer")
+            if args.max_lookups is not None:
+                request = table["request"]
+                request.setdefault("options", {})["max_lookups"] = cap
+                atomic_write(directory / "request.json", json.dumps(request, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
             # Use recorded host-agent confirmation evidence, never a
             # model-generated homepage alone.
             confirmations = table["request"].get("homepage_confirmations", {})
@@ -171,7 +231,7 @@ def main(argv=None):
                     eligible.add(host)
             if any(row.get("homepage_decision_required") for row in table["rows"]):
                 eligible &= {row["lookup_host"] for row in table["rows"] if row["homepage_status"] == "confirmed"}
-            visits = lookup_hosts(table, directory, stage, max_lookups=args.max_lookups,
+            visits = lookup_hosts(table, directory, stage, max_lookups=cap,
                                   eligible_hosts=eligible)
             print(json.dumps({"run_id": args.run_id, "hosts": len(visits),
                               "attempted": sum(v.get("exit_code") is not None for v in visits.values()),
@@ -182,13 +242,15 @@ def main(argv=None):
             if not ignore.exists() or ".ihav_space/" not in ignore.read_text().splitlines():
                 print("Warning: add .ihav_space/ to the calling project's .gitignore.", file=sys.stderr)
             table, snapshots = synthesize(directory)
-            outputs = export(table, directory)
             synthesis = directory / "synthesis"
+            if synthesis.resolve() != synthesis or (synthesis.exists() and not synthesis.is_dir()):
+                raise ValueError("synthesis output directory escapes the run or is not a directory")
+            outputs = export(table, directory)
             synthesis.mkdir(exist_ok=True)
             for name, content in snapshots:
                 atomic_write(synthesis / f"{name}.json", content)
             print(json.dumps({"run_id": args.run_id, "rows": len(table["rows"]), "outputs": outputs,
-                              "verification": "not_implemented"}))
+                              "verification": table["verification"], "survey": progress(directory, table)}))
         return 0
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

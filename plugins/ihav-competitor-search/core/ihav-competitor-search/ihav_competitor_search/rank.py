@@ -2,6 +2,8 @@
 import copy
 from collections import Counter
 
+from .merge import MAX_JSON_DEPTH, validate_json_value
+
 
 def apply_visits(table, visits):
     """visits maps normalized lookup_host to {exit_code, result, reason}.
@@ -21,6 +23,11 @@ def apply_visits(table, visits):
             raise ValueError("counter response must be an object")
         if record is not None and record.get("exit_code") is not None and (isinstance(record["exit_code"], bool) or not isinstance(record["exit_code"], int)):
             raise ValueError("counter exit_code must be an integer or null")
+        if record is not None:
+            # A response envelope adds one level around the child JSON.
+            validate_json_value(record, max_depth=MAX_JSON_DEPTH + 1)
+            if record.get("result") is not None and record.get("exit_code") != 0:
+                raise ValueError("counter result requires successful exit_code 0")
         row["shared_domain"] = counts[row["lookup_host"]] > 1
         row["traffic"] = copy.deepcopy(record)
         row["traffic_rank"] = None
@@ -49,8 +56,9 @@ def apply_visits(table, visits):
             elif status == "rank_only":
                 rank = result.get("rank")
                 value = rank.get("value") if isinstance(rank, dict) else None
-                if result.get("monthly_visits") is not None or isinstance(value, bool) or not isinstance(value, int) or value < 1:
-                    raise ValueError("rank_only requires positive rank.value and null monthly_visits")
+                if (result.get("monthly_visits") is not None or result.get("monthly_visits_text") is not None
+                        or isinstance(value, bool) or not isinstance(value, int) or value < 1):
+                    raise ValueError("rank_only requires positive rank.value and null monthly_visits and monthly_visits_text")
                 basis = "tranco_rank"
             else:
                 raise ValueError("unsupported counter result kind")

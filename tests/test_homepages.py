@@ -84,7 +84,7 @@ def test_redirect_handler_follows_same_host_only():
     req=Request("https://example.com/a")
     redirected=handler.redirect_request(req,Response(),302,"",{},"https://www.example.com/b")
     assert redirected.full_url=="https://www.example.com/b"
-    with pytest.raises(RedirectBoundary,match="") as exc:
+    with pytest.raises(RedirectBoundary) as exc:
         handler.redirect_request(req,Response(),302,"",{},"https://other.example/b")
     assert exc.value.reason=="cross_site_redirect"
     with pytest.raises(RedirectBoundary) as exc:

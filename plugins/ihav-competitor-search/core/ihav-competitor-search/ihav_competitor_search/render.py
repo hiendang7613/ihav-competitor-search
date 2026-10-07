@@ -14,7 +14,38 @@ META = ["candidate_id", "traffic_rank", "lookup_host", "monthly_visits", "tranco
         "traffic_kind", "analyzed_at", "traffic_source", "lookup_reason", "homepage_status",
         "monthly_visits_text", "stale", "scraped_at"]
 EVIDENCE = ["candidate_id", "column_key", "value", "raw_value", "raw_unit", "source_url",
-            "fetched_at", "method", "verification", "reason"]
+            "fetched_at", "method", "verification", "reason", "verification_basis", "checked_by", "raw_excerpt"]
+
+REPORT_SCRIPT = """
+const table = document.getElementById('results');
+const body = table.tBodies[0];
+const rows = Array.from(body.rows);
+document.getElementById('filter').addEventListener('input', event => {
+  const query = event.target.value.toLocaleLowerCase();
+  for (const row of rows) row.hidden = !row.textContent.toLocaleLowerCase().includes(query);
+  document.getElementById('visible').textContent = rows.filter(row => !row.hidden).length;
+});
+for (const button of table.querySelectorAll('th button')) {
+  button.addEventListener('click', () => {
+    const index = Number(button.dataset.column);
+    const ascending = button.parentElement.getAttribute('aria-sort') !== 'ascending';
+    for (const heading of table.querySelectorAll('th')) heading.removeAttribute('aria-sort');
+    button.parentElement.setAttribute('aria-sort', ascending ? 'ascending' : 'descending');
+    rows.sort((a, b) => {
+      const left = a.cells[index].dataset.sort, right = b.cells[index].dataset.sort;
+      if (!left || !right) return left ? -1 : right ? 1 : 0;
+      let compare;
+      if (a.cells[index].dataset.type === 'number') {
+        const x = /^-?\\d+$/.test(left) ? BigInt(left) : Number(left);
+        const y = /^-?\\d+$/.test(right) ? BigInt(right) : Number(right);
+        compare = x < y ? -1 : x > y ? 1 : 0;
+      } else compare = left.localeCompare(right, undefined, {numeric: true});
+      return ascending ? compare : -compare;
+    });
+    for (const row of rows) body.appendChild(row);
+  });
+}
+"""
 
 
 def text(value):
@@ -30,14 +61,23 @@ def safe_link(value):
 
 
 def flat_row(row, columns):
-    result = (row.get("traffic") or {}).get("result") or {}
+    traffic = row.get("traffic") or {}
+    result = traffic.get("result") or {}
+    status = row.get("lookup_status")
+    if (traffic.get("exit_code") != 0 or status not in {"estimate", "rank_only"}
+            or not isinstance(result, dict) or result.get("kind") != status):
+        result = {}
+    estimate = result.get("kind") == "estimate"
+    rank_only = result.get("kind") == "rank_only"
     return {**{key: text(row.get(key)) for key in META},
-            "monthly_visits": text(result.get("monthly_visits")),
-            "tranco_rank": text((result.get("rank") or {}).get("value")),
-            "traffic_kind": text(result.get("kind")), "analyzed_at": text(result.get("analyzed_at")),
+            "monthly_visits": text(result.get("monthly_visits") if estimate else None),
+            "tranco_rank": text((result.get("rank") or {}).get("value") if rank_only else None),
+            "traffic_kind": text(result.get("kind")),
+            "analyzed_at": text(result.get("analyzed_at") if estimate else None),
             "traffic_source": text(result.get("source")), "lookup_reason": text((row.get("traffic") or {}).get("reason")),
-            "monthly_visits_text": text(result.get("monthly_visits_text")),
-            "stale": text(result.get("stale")), "scraped_at": text(result.get("scraped_at")),
+            "monthly_visits_text": text(result.get("monthly_visits_text") if estimate else None),
+            "stale": text(result.get("stale") if estimate else None),
+            "scraped_at": text(result.get("scraped_at") if estimate else None),
             **{c["key"]: text(row["cells"][c["key"]]["value"]) for c in columns}}
 
 
@@ -103,7 +143,8 @@ def export(table, directory):
                  **{k: text(row["cells"][c["key"]].get(k)) for k in EVIDENCE[2:]}}
                 for row in rows for c in columns]
     escape_md = lambda value: html.escape(text(value)).replace("|", "&#124;").replace("\n", "<br>").replace("\r", "")
-    md = ["# Competitor survey", "", "Traffic is modelled, not owner analytics. This offline report has no live verification.", "",
+    evidence_note = "Recorded host/human page checks are shown per cell; missing or unchecked facts remain unverified."
+    md = ["# Competitor survey", "", "Traffic is modelled, not owner analytics. " + evidence_note, "",
           "| " + " | ".join(fields) + " |", "| " + " | ".join("---" for _ in fields) + " |"]
     footnotes = []
     for row, values in zip(rows, flat):
@@ -117,6 +158,9 @@ def export(table, directory):
                 footnotes.append(f'{n}. <a href="{url}">{escape_md(cell["source_url"])}</a> — {escape_md(cell["fetched_at"])} — {escape_md(cell["method"])}')
         md.append("| " + " | ".join(display[k] for k in fields) + " |")
     md += ["", "Evidence: evidence.csv and table.json.", "", *footnotes]
+    if "research" in table:
+        md += ["", "Research mode evidence (saved execution receipts; cell verification is separate):",
+               escape_md(json.dumps(table["research"], ensure_ascii=False))]
     if any(p.get("method") == "manual_paste" for r in table["rounds"] for p in r["providers"]):
         md += ["", "Recorded rounds (manual_paste means a person pasted the answer; no automated send):",
                escape_md(json.dumps(table["rounds"], ensure_ascii=False))]
@@ -124,7 +168,10 @@ def export(table, directory):
         md += ["", span_note]
     if table["issues"]:
         md += ["", "Merge issues:", *["- " + escape_md(json.dumps(issue, ensure_ascii=False)) for issue in table["issues"]]]
-    headings = "".join(f"<th>{html.escape(k)}</th>" for k in fields)
+    headings = "".join(f'<th scope="col"><button type="button" data-column="{index}">{html.escape(k)}</button></th>'
+                       for index, k in enumerate(fields))
+    numeric_visits = [(r.get("traffic") or {}).get("result", {}).get("monthly_visits") for r in rows]
+    max_visits = max((v for v in numeric_visits if type(v) is int and v >= 0), default=0)
     body = []
     for row, values in zip(rows, flat):
         display = visits_display(values)
@@ -135,20 +182,36 @@ def export(table, directory):
             if evidence_cell and evidence_cell["verification"] == "verified" and safe_link(evidence_cell["source_url"]):
                 title = html.escape(f'{evidence_cell["fetched_at"]} · {evidence_cell["method"]}', quote=True)
                 value = f'<a href="{html.escape(evidence_cell["source_url"], quote=True)}" title="{title}">{value}</a>'
-            cells.append(f"<td>{value}</td>")
+            if key == "monthly_visits" and values["rank_basis"] == "monthly_visits" and max_visits:
+                width = int(int(values[key]) * 100 / max_visits)
+                value += f'<span class="visits-bar" style="width:{width}%" aria-hidden="true"></span>'
+            if key in {"verification_status", "lookup_status"} or (evidence_cell and type(evidence_cell["value"]) is bool):
+                value = f'<span class="badge">{value}</span>'
+            numeric = key in {"monthly_visits", "tranco_rank", "traffic_rank"} or next((c["type"] == "number" for c in columns if c["key"] == key), False)
+            kind = "number" if numeric else "text"
+            cells.append(f'<td data-type="{kind}" data-sort="{html.escape(values[key], quote=True)}">{value}</td>')
         body.append("<tr>" + "".join(cells) + "</tr>")
-    summary = html.escape(json.dumps({"merge": table["rounds"], "chatbot": table.get("chatbot_rounds", {})}, ensure_ascii=False, indent=2))
+    summary = html.escape(json.dumps({"merge": table["rounds"], "chatbot": table.get("chatbot_rounds", {}),
+                                     **({"research": table["research"]} if "research" in table else {})}, ensure_ascii=False, indent=2))
     issues = html.escape(json.dumps(table["issues"], ensure_ascii=False, indent=2))
     report = ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
               '<title>Competitor survey</title><style>body{font:15px system-ui;margin:2rem;color:#172033;background:#f5f7fb}'
               'table{border-collapse:collapse;background:white}td,th{border:1px solid #dde3ee;padding:.7rem;text-align:left}'
-              '.table{overflow:auto}pre{white-space:pre-wrap}a{color:#1759ba}</style><h1>Competitor survey</h1>'
-              '<p>Offline report. Traffic is modelled, not owner analytics. Homepages and cells have not been verified by this core.</p>'
-              '<p>Full cell provenance: evidence.csv and table.json. Interactive charts are deferred.</p>'
+              '.table{overflow:auto}pre{white-space:pre-wrap}a{color:#1759ba}'
+              'th{position:sticky;top:0;background:#edf1f8}th button{font:inherit;border:0;background:none;cursor:pointer;text-align:left}'
+              'th[aria-sort=ascending] button:after{content:" ↑"}th[aria-sort=descending] button:after{content:" ↓"}'
+              '.badge{display:inline-block;border:1px solid #bdcce3;border-radius:.4rem;padding:.2rem .4rem}'
+              '.visits-bar{display:block;height:.3rem;background:#3c72bf;margin-top:.4rem}'
+              'input{padding:.6rem;font:inherit;margin:.4rem}button:focus-visible,input:focus-visible{outline:2px solid #1759ba}'
+              '</style><h1>Competitor survey</h1>'
+              '<p>Offline report. Traffic is modelled, not owner analytics. ' + evidence_note + '</p>'
+              '<p>Full cell provenance: evidence.csv and table.json. Sort controls change display order only; traffic ranks retain their recorded meaning.</p>'
+              f'<label>Filter rows <input id="filter" type="search"></label><p><span id="visible">{len(rows)}</span> rows visible.</p>'
               + (f'<p>{html.escape(span_note)}</p>' if span_note else '') +
-              f'<div class="table"><table><thead><tr>{headings}</tr></thead><tbody>{"".join(body)}</tbody></table></div>'
+              f'<div class="table"><table id="results"><thead><tr>{headings}</tr></thead><tbody>{"".join(body)}</tbody></table></div>'
               f'<details><summary>Recorded rounds and provider outcomes</summary><pre>{summary}</pre></details>'
-              f'<details><summary>Merge issues and ambiguous matches</summary><pre>{issues}</pre></details></html>')
+              f'<details><summary>Merge issues and ambiguous matches</summary><pre>{issues}</pre></details>'
+              f'<script>{REPORT_SCRIPT}</script></html>')
     outputs = {"table.json": json.dumps(table, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
                "table.csv": csv_text(fields, flat), "evidence.csv": csv_text(EVIDENCE, evidence),
                "table.md": "\n".join(md) + "\n", "report.html": report}

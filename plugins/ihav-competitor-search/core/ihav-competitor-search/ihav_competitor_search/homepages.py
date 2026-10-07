@@ -290,6 +290,8 @@ def confirm_homepage(table, directory, candidate_id, url=None, *, reason=None, m
         raise ValueError("provide one URL or an unconfirmed reason")
     if reason is not None and not reason.strip():
         raise ValueError("unconfirmed reason must not be empty")
+    if url is not None:
+        _, host = normalize_url(url)
     with homepage_lock(directory):
         request_path = directory / "request.json"
         request = json.loads(request_path.read_text())
@@ -298,12 +300,11 @@ def confirm_homepage(table, directory, candidate_id, url=None, *, reason=None, m
         if method == "official_search" and previous.get("search_used"):
             raise ValueError("official-site search is already recorded for this candidate; do not search again")
         date = now()
-        record = {"candidate_id": candidate_id, "status": "confirmed" if url else "unconfirmed",
+        record = {"candidate_id": candidate_id, "status": "confirmed" if url is not None else "unconfirmed",
                   "source_url": url, "fetched_at": date, "method": method, "reason": reason,
                   "previous_lookup_host": row["lookup_host"],
                   "search_used": previous.get("search_used", False) or method == "official_search"}
-        if url:
-            _, host = normalize_url(url)
+        if url is not None:
             checks = read_checks(directory)
             if method == "page":
                 check = checks.get(candidate_id, {})
