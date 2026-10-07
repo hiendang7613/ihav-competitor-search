@@ -55,7 +55,7 @@ For Claude Code and Codex plugin discovery, this repository contains separate
 [Codex marketplace](.agents/plugins/marketplace.json) manifests and host skills.
 The package follows both hosts' manifest contracts. Local installation and CLI
 checks are separate from loading a skill in a fresh native session and provider delivery.
-This checkout contains unreleased changes; its existing release tag stays unchanged.
+Release notes for each tagged version are in [CHANGELOG.md](CHANGELOG.md).
 
 Traffic lookup additionally needs an installed **ihav-web-visit-counter** script.
 Pass its `scripts/visits.py` path with `--counter`, or set `IHAV_VISIT_COUNTER`.
@@ -301,8 +301,8 @@ the explicit network stages. See [CLI implementation](plugins/ihav-competitor-se
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md). Tests use synthetic/saved fixtures and
-must not contact live websites. See [CHANGELOG.md](CHANGELOG.md) for the
-`0.1.0` release and [SECURITY.md](SECURITY.md) for safe vulnerability reporting.
+must not contact live websites. See [CHANGELOG.md](CHANGELOG.md) for
+release notes and [SECURITY.md](SECURITY.md) for safe vulnerability reporting.
 
 ## License
 

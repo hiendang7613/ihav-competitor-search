@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — Unreleased
+## 0.2.0 — 2026-10-08
 
 - Create saved runs with `init`; advance a survey with one queue/collection step.
 - Require versioned WebChat queue-admission proof and structured no-effect refusals;
@@ -24,8 +24,8 @@
 - Enforce a 64-container JSON nesting limit for answers, counter replies and cell
   evidence before recursive consumers, including Python 3.13's broader decoder.
 
-Live browser/provider delivery, native skill execution and hosted CI are separate
-qualification steps. The existing 0.1.0 release tag is preserved.
+Offline tests cover these boundaries. Live browser/provider delivery and native
+skill execution are not yet qualified.
 
 ## 0.1.0 — 2026-10-04
 

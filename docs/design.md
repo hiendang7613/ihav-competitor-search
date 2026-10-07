@@ -1,6 +1,6 @@
-# ihav-competitor-search: design spec v0 (draft)
+# ihav-competitor-search: original design
 
-Status: draft v0.2, revised after CODEX_01 review `agents_space/reviews/design-v0-review.md` (F1-F12). Nothing here is built or run. Author: CLAUDE_01, 2026-10-03.
+Status: the design written before the code, kept as a record of the reasoning. Releases 0.1.0 and 0.2.0 build on it, and some details changed. The shipped commands and limits are in the [README](../README.md) and [how it works](public/how-it-works.md); where they differ from this file, they win. Labels such as "proposed" and "draft" below are as written then.
 Admin receipts: `P-f39e2429-b310-4379-b8ea-10008262cbe2` (goal), `P-17ce3510-71aa-4cf4-913e-4c92b1c7fb23` ("continue" with the proposed defaults).
 Evidence labels: **admin** = admin statement; **default** = proposed default the admin let stand by saying "continue", not explicitly confirmed; **verified** = read in a local file on 2026-10-03; **proposed** = design choice made here, open to review; **unverified** = needs a live check.
 

@@ -13,5 +13,3 @@ def ask_lock(directory):
         yield
     finally:
         lock.rmdir()
-
-

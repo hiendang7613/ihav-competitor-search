@@ -2,8 +2,8 @@
 
 ## Scope
 
-The current source milestone is 0.1.0, unreleased. No supported published release
-or security audit is claimed. Reports about the current source are welcome.
+The latest release is 0.2.0. No security audit is claimed. Reports about the
+latest release or the current `main` source are welcome.
 
 ## Reporting a vulnerability
 
